@@ -101,3 +101,9 @@ Reason for run 2:
 - Cost: `0.569917`.
 - Key blockers from synthesis: freeze judge config before Phase 2 execution; treat code-review metrics as local hypotheses because SOTA evidence is weak; do not use mono-source figures as design thresholds.
 - Key retained directions: frozen golden set + deterministic runner/scorers + baseline comparator; local injected-defect golden set; positionally consistent pairwise judging; generator/judge separation; SPB measurement by controlled pairs; cost/latency per case.
+
+### Phase 2 Design Notes
+
+- Proposed design doc: `docs/phase2-benchmark-design.md`
+- Installation list: none proposed for Benchmark v1.0.0.
+- Execution status: paused before creating fixtures/runner/baseline, per requirement to present design + installation list before execution.
