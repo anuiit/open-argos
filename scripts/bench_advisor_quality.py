@@ -243,9 +243,9 @@ def render_report(payload: dict[str, Any]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", choices=["cheap", "full"], default="cheap")
-    parser.add_argument("--advisor", default="kimi")
+    parser.add_argument("--advisor", default="minimax")
     parser.add_argument("--manifest", default=str(MANIFEST))
-    parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--timeout", type=int, default=1300)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 

@@ -2,9 +2,10 @@
   "benchmark_version": "1.0.0",
   "created_at": "2026-07-09",
   "stable_judge_advisor": "fable",
-  "baseline_candidate_advisor": "kimi",
-  "quality_run_shape": "advisor-dev <@review|@critique|@plan> <brief> --advisor kimi --single-ok --json",
+  "baseline_candidate_advisor": "minimax",
+  "quality_run_shape": "advisor-dev <@review|@critique|@plan> <brief> --advisor minimax --single-ok --json",
   "deterministic_scorers": "section compliance, manifest keyword recall/precision, minimal fix actionability, SOTA JSON integrity, internal benchmark infra checks",
   "dev_config_sha256": "cff4da872396c92cf50b5e83e80d3ae75ee971708ec30d603bbd15903efe62fc",
-  "self_evaluation_bias_note": "sonnet/fable may be both candidate advisors and judges; LLM judge scores are separate from deterministic scores and judge config changes require a new benchmark version."
+  "self_evaluation_bias_note": "sonnet/fable may be both candidate advisors and judges; LLM judge scores are separate from deterministic scores and judge config changes require a new benchmark version.",
+  "runner_timeout_sec": 1300
 }
