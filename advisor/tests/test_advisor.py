@@ -242,6 +242,9 @@ class PromptAndRoutingTests(unittest.TestCase):
         self.assertIn("## Important issues", prompt)
         self.assertIn("## Preferences", prompt)
         self.assertIn("## Minimal fix plan", prompt)
+        self.assertIn("sécurité", prompt)
+        self.assertIn("contrat/API", prompt)
+        self.assertIn("vérification concrète", prompt)
 
     def test_build_prompt_uses_safe_fence_for_backtick_content(self) -> None:
         with tempfile.TemporaryDirectory() as td:

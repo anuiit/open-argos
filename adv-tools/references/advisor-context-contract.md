@@ -32,6 +32,13 @@ Requested output:
 - Artifact/session path if applicable
 ```
 
+## Output quality bar
+
+- Map severity consistently: correctness, security, contract/API, data-loss, privacy, credential/auth, or tool-execution failures belong in `Blockers` when they block safe reliance on the result.
+- Put substantial non-blocking issues in `Important issues`; put optional style, refactor, or alternative preferences in `Preferences`. Do not hide blockers in lower-severity sections.
+- `Minimal fix plan` must be minimal, ordered, and measurable. Each step should name an explicit verification such as `pytest`, `ruff`, a smoke command, an assertion, or an acceptance criterion.
+- When acceptance criteria or known risks are provided, preserve them as numbered items in the brief and ask advisor to address each one explicitly.
+
 ## Boundaries
 
 - The CLI injects a baseline advisor contract and required output sections into prompts; skill prompts should still include the task-specific scope/evidence.

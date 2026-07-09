@@ -265,13 +265,13 @@ ADVISOR_PROMPT_CONTRACT = """Contrat advisor:
 
 ADVISOR_OUTPUT_CONTRACT = """Format de sortie obligatoire:
 ## Blockers
-- Points qui doivent être corrigés avant de s'appuyer sur le résultat, ou `(none)`.
+- Défauts bloquant une utilisation sûre du résultat: correction, sécurité, contrat/API, perte de données, confidentialité, identifiants/auth ou exécution d'outils. Liste chaque blocker concret, sinon `(none)`.
 ## Important issues
-- Problèmes importants mais non bloquants, ou `(none)`.
+- Problèmes substantiels mais non bloquants. Ne déplace pas un blocker ici, sinon `(none)`.
 ## Preferences
-- Suggestions/options non obligatoires, ou `(none)`.
+- Suggestions optionnelles, style, refactor ou alternatives non obligatoires, ou `(none)`.
 ## Minimal fix plan
-- Étapes minimales, vérifiables et ordonnées.
+- Étapes minimales, vérifiables et ordonnées. Chaque étape nomme une vérification concrète: test, smoke, commande, assertion ou critère d'acceptation.
 """.strip()
 
 
