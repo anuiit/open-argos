@@ -92,3 +92,12 @@ Reason for run 2:
 - Source health caveats: arXiv had 6 no-relevant-result errors; Brave returned one HTTP 429; Semantic Scholar skipped due missing `S2_API_KEY`; strict-topic filtered 24 results total.
 - Cost: total `0.820419` (`kimi=0`, `sonnet=0.110559`, `fable=0.70986`).
 - Finding: refined query still failed to retrieve primary strong/medium code-review judge-evaluation evidence. The word `harness` likely polluted retrieval with Harness.io and generic agent-harness content. Further SOTA-deep-high runs are disallowed by constraint; any later SOTA must be `@sota-normal --strict-topic` only for a documented blocker.
+
+### Phase 1 Fable Synthesis Notes
+
+- Command shape: `advisor run review ... --advisor fable --single-ok --file <run1 report.md> --file <run2 report.md> --json` using stable advisor.
+- Artifact: `/home/sina/.advisor/sessions/20260709T204615-review`
+- Persisted contract: `docs/phase1-synthesis-contract.md`
+- Cost: `0.569917`.
+- Key blockers from synthesis: freeze judge config before Phase 2 execution; treat code-review metrics as local hypotheses because SOTA evidence is weak; do not use mono-source figures as design thresholds.
+- Key retained directions: frozen golden set + deterministic runner/scorers + baseline comparator; local injected-defect golden set; positionally consistent pairwise judging; generator/judge separation; SPB measurement by controlled pairs; cost/latency per case.
