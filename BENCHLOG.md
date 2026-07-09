@@ -124,3 +124,10 @@ Reason for run 2:
 - Official full baseline score: `89.361536/100`; axes: quality `34.361536/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.046388`; latency total `279.987s`.
 - Official full baseline advisor-dev commit: `ff28c58`.
 - Benchmark version: `1.0.0`; judge/candidate config frozen in `benchmarks/frozen/judge-v1.json` with candidate advisor `minimax`.
+
+### Benchmark Version 1.0.1
+
+- Changed: yes.
+- Reason: stable advisor review artifact `/home/sina/.advisor/sessions/20260709T220111-review` found benchmark defect C: recall searched `Blockers + Important issues` but precision denominator used `Blockers` only, making valid findings in `Important issues` score as precision `0.0`; numbered lists were also undercounted.
+- Requires re-baseline: yes. Do not compare v1.0.0 and v1.0.1 without this note.
+- Patch commit: `7456afb`.
