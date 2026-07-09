@@ -1,0 +1,31 @@
+{
+  "verification": {
+    "status": "error",
+    "invalid_evidence_ids": [
+      "E999"
+    ],
+    "missing_citations": [
+      "E2"
+    ],
+    "unexpected_urls": [
+      "https://unsupported.example"
+    ]
+  },
+  "summary": {
+    "source_quality_counts": {
+      "strong": 3,
+      "weak": 0,
+      "off_topic": 2
+    },
+    "source_health": {
+      "brave": {
+        "error": 1,
+        "skipped": 0
+      },
+      "semantic": {
+        "error": 0,
+        "skipped": 3
+      }
+    }
+  }
+}

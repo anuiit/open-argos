@@ -1,0 +1,351 @@
+{
+  "version": "1.0.0",
+  "created_at": "2026-07-09",
+  "judge_config": "benchmarks/frozen/judge-v1.json",
+  "cases": [
+    {
+      "case_id": "real-review-summary-001",
+      "kind": "real",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/real-inputs/real-review-summary-001.md",
+      "cheap": true,
+      "known_defects": [],
+      "minimal_fix_requirements": [
+        "section headings",
+        "actionable steps",
+        "verification"
+      ],
+      "false_positive_traps": [
+        "do not claim access to omitted repository files",
+        "do not propose broad rewrite without evidence"
+      ]
+    },
+    {
+      "case_id": "real-review-diff-002",
+      "kind": "real",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/real-inputs/real-review-diff-002.md",
+      "cheap": false,
+      "known_defects": [],
+      "minimal_fix_requirements": [
+        "section headings",
+        "actionable steps",
+        "verification"
+      ],
+      "false_positive_traps": [
+        "do not claim access to omitted repository files",
+        "do not propose broad rewrite without evidence"
+      ]
+    },
+    {
+      "case_id": "real-plan-003",
+      "kind": "real",
+      "mode": "plan",
+      "path": "benchmarks/golden/v1/cases/real-inputs/real-plan-003.md",
+      "cheap": true,
+      "known_defects": [],
+      "minimal_fix_requirements": [
+        "section headings",
+        "actionable steps",
+        "verification"
+      ],
+      "false_positive_traps": [
+        "do not claim access to omitted repository files",
+        "do not propose broad rewrite without evidence"
+      ]
+    },
+    {
+      "case_id": "real-critique-004",
+      "kind": "real",
+      "mode": "critique",
+      "path": "benchmarks/golden/v1/cases/real-inputs/real-critique-004.md",
+      "cheap": false,
+      "known_defects": [],
+      "minimal_fix_requirements": [
+        "section headings",
+        "actionable steps",
+        "verification"
+      ],
+      "false_positive_traps": [
+        "do not claim access to omitted repository files",
+        "do not propose broad rewrite without evidence"
+      ]
+    },
+    {
+      "case_id": "real-smoke-005",
+      "kind": "real",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/real-inputs/real-smoke-005.md",
+      "cheap": false,
+      "known_defects": [],
+      "minimal_fix_requirements": [
+        "section headings",
+        "actionable steps",
+        "verification"
+      ],
+      "false_positive_traps": [
+        "do not claim access to omitted repository files",
+        "do not propose broad rewrite without evidence"
+      ]
+    },
+    {
+      "case_id": "injected-path-traversal-001",
+      "kind": "injected",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/injected/injected-path-traversal-001.md",
+      "cheap": true,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "security",
+          "file": "read_note",
+          "expected_terms": [
+            "path traversal",
+            "resolve",
+            "base_dir",
+            "directory traversal"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "read_note",
+        "base_dir",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-shell-injection-002",
+      "kind": "injected",
+      "mode": "critique",
+      "path": "benchmarks/golden/v1/cases/injected/injected-shell-injection-002.md",
+      "cheap": false,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "security",
+          "file": "format_file",
+          "expected_terms": [
+            "shell injection",
+            "shell=True",
+            "subprocess",
+            "list args"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "format_file",
+        "shell=False",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-lock-timeout-003",
+      "kind": "injected",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/injected/injected-lock-timeout-003.md",
+      "cheap": false,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "reliability",
+          "file": "run_locked",
+          "expected_terms": [
+            "finally",
+            "timeout",
+            "release",
+            "flock"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "try/finally",
+        "timeout",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-needs-human-004",
+      "kind": "injected",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/injected/injected-needs-human-004.md",
+      "cheap": true,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "infra",
+          "file": "classify_provider_error",
+          "expected_terms": [
+            "needs_human",
+            "exit code 3",
+            "auth",
+            "login"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "needs_human",
+        "3",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-sota-missing-id-005",
+      "kind": "injected",
+      "mode": "critique",
+      "path": "benchmarks/golden/v1/cases/injected/injected-sota-missing-id-005.md",
+      "cheap": false,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "sota",
+          "file": "verification",
+          "expected_terms": [
+            "E999",
+            "invalid evidence",
+            "missing citation",
+            "verification.json"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "invalid_evidence_ids",
+        "fail",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-sota-bucket-006",
+      "kind": "injected",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/injected/injected-sota-bucket-006.md",
+      "cheap": false,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "sota",
+          "file": "summary.json",
+          "expected_terms": [
+            "vendor",
+            "off_topic",
+            "strong",
+            "quality bucket"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "summary.json",
+        "bucket",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-prompt-injection-007",
+      "kind": "injected",
+      "mode": "critique",
+      "path": "benchmarks/golden/v1/cases/injected/injected-prompt-injection-007.md",
+      "cheap": true,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "prompt_safety",
+          "file": "file attachment",
+          "expected_terms": [
+            "untrusted",
+            "ignore",
+            "nested advisor",
+            "tool execution"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "untrusted",
+        "no tools",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    },
+    {
+      "case_id": "injected-cost-latency-008",
+      "kind": "injected",
+      "mode": "review",
+      "path": "benchmarks/golden/v1/cases/injected/injected-cost-latency-008.md",
+      "cheap": false,
+      "known_defects": [
+        {
+          "id": "D1",
+          "severity": "blocker",
+          "category": "cost_latency",
+          "file": "summarize",
+          "expected_terms": [
+            "negative cost",
+            "missing cost",
+            "duration",
+            "per advisor"
+          ]
+        }
+      ],
+      "minimal_fix_requirements": [
+        "cost",
+        "duration",
+        "test"
+      ],
+      "false_positive_traps": [
+        "do not add dependencies unless necessary",
+        "do not rewrite unrelated code"
+      ]
+    }
+  ],
+  "sota_cases": [
+    {
+      "case_id": "sota-valid-001",
+      "path": "benchmarks/golden/v1/cases/sota/sota-valid.json",
+      "expected_status": "ok"
+    },
+    {
+      "case_id": "sota-invalid-002",
+      "path": "benchmarks/golden/v1/cases/sota/sota-invalid.json",
+      "expected_status": "error"
+    }
+  ],
+  "infra_cases": [
+    {
+      "case_id": "internal-benchmark-001",
+      "method": "advisor benchmark --json",
+      "expected_status": "pass"
+    }
+  ]
+}

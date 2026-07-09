@@ -1,0 +1,25 @@
+{
+  "verification": {
+    "status": "ok",
+    "invalid_evidence_ids": [],
+    "missing_citations": [],
+    "unexpected_urls": []
+  },
+  "summary": {
+    "source_quality_counts": {
+      "medium": 2,
+      "weak": 1,
+      "off_topic": 0
+    },
+    "source_health": {
+      "arxiv": {
+        "error": 0,
+        "skipped": 0
+      },
+      "brave": {
+        "error": 0,
+        "skipped": 0
+      }
+    }
+  }
+}
