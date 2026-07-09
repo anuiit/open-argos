@@ -157,12 +157,14 @@ def run_quality_case(case: dict[str, Any], advisor: str, artifact_root: Path, ti
     )
     cmd = [str(ADVISOR_DEV), mode, prompt, "--advisor", advisor, "--single-ok", "--file", str(ROOT / case["path"]), "--artifact-root", str(artifact_root), "--json"]
     exit_code, stdout, stderr, duration = run_cmd(cmd, timeout=timeout)
-    if exit_code == 3 or "needs_human" in stdout.lower() or "needs_human" in stderr.lower():
-        raise SystemExit("needs_human from advisor-dev; stopping benchmark immediately")
+    if exit_code == 3:
+        raise SystemExit("needs_human exit code from advisor-dev; stopping benchmark immediately")
     try:
         meta = parse_json_stdout(stdout)
     except Exception as exc:
         meta = {"artifact_dir": None, "results": [], "parse_error": str(exc), "stdout_tail": stdout[-1000:], "stderr_tail": stderr[-1000:]}
+    if any((r.get("status") == "needs_human") for r in meta.get("results", [])):
+        raise SystemExit("needs_human status from advisor-dev; stopping benchmark immediately")
     content = "\n\n".join((r.get("content") or r.get("error") or "") for r in meta.get("results", []))
     score = score_quality(case, content, meta, duration, exit_code)
     score["command"] = " ".join(cmd[:4] + ["..."])
@@ -194,8 +196,8 @@ def score_sota_case(case: dict[str, Any]) -> dict[str, Any]:
 def run_infra_case(case: dict[str, Any], artifact_root: Path) -> dict[str, Any]:
     cmd = [str(ADVISOR_DEV), "benchmark", "--json", "--artifact-root", str(artifact_root)]
     exit_code, stdout, stderr, duration = run_cmd(cmd, timeout=120)
-    if exit_code == 3 or "needs_human" in stdout.lower() or "needs_human" in stderr.lower():
-        raise SystemExit("needs_human from advisor-dev internal benchmark; stopping benchmark immediately")
+    if exit_code == 3:
+        raise SystemExit("needs_human exit code from advisor-dev internal benchmark; stopping benchmark immediately")
     try:
         data = parse_json_stdout(stdout)
         score = float(data.get("normalized_score", 0.0)) / 100.0
