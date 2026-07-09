@@ -71,10 +71,22 @@ def section_map(text: str) -> dict[str, str]:
     return sections
 
 
+BULLET_LINE_RE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+(?P<text>.+?)\s*$", re.M)
+NONE_MARKER_RE = re.compile(r"^(?:\(?none\)?|aucun(?:e)?|rien|n/?a|néant)\.?$", re.I)
+
+
+def is_none_marker(text: str) -> bool:
+    return bool(NONE_MARKER_RE.fullmatch(text.strip()))
+
+
 def bullet_count(section: str) -> int:
-    if not section or re.search(r"\(none\)|\bnone\b|aucun", section, re.I):
+    if not section or not section.strip():
         return 0
-    return len(re.findall(r"^\s*(?:[-*]|\d+[.)])\s+", section, re.M)) or (1 if section.strip() else 0)
+    bullet_items = [match.group("text").strip() for match in BULLET_LINE_RE.finditer(section)]
+    if bullet_items:
+        return sum(1 for item in bullet_items if not is_none_marker(item))
+    stripped = section.strip()
+    return 0 if is_none_marker(stripped) else 1
 
 
 def contains_any(text: str, terms: list[str]) -> bool:

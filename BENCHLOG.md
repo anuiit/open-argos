@@ -24,21 +24,40 @@
 | 0 | `PATH=<tmp-advisor-dev-alias>:$PATH python3 adv-tools/scripts/smoke_adv_tools.py --no-gate` | N/A | PASS against advisor-dev; temp alias removed after run. |
 | 0 | `python3 -m pytest -q advisor/tests adv-tools/tests` | N/A | PASS: 135 passed, 22 subtests passed. |
 | 0 | `python3 -m ruff check advisor/advisor.py advisor/tests adv-tools/scripts adv-tools/tests` | N/A | PASS. |
+| 1 | `advisor @sota-deep --high --strict-topic <initial question> --json` | `/home/sina/.advisor/sessions/20260709T200534-sota` | Verification ok; cost 1.082601. |
+| 1 | `advisor @sota-deep --high --strict-topic <refined question> --json` | `/home/sina/.advisor/sessions/20260709T202545-sota` | Verification ok; cost 0.820419. |
+| 1 | `advisor run review --advisor fable --single-ok --file <run1 report> --file <run2 report> --json` | `/home/sina/.advisor/sessions/20260709T204615-review` | Phase 1 synthesis contract. |
+| 2 | `advisor gate set bench-setup` | `/home/sina/.advisor/sessions/gates/bench-setup.json` | Gate state pass. |
+| 2 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T195252Z-v1.0.0-cheap-minimax` | v1.0.0 cheap baseline. |
+| 2 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T195510Z-v1.0.0-full-minimax` | v1.0.0 official full baseline. |
+| 3-pre | `advisor @review ... --file <v1.0.0 baseline/results/BENCHLOG/code> --json` | `/home/sina/.advisor/sessions/20260709T220111-review` | Stable review found benchmark defect C; no needs_human status. |
+| 2 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T201952Z-v1.0.1-full-minimax` | v1.0.1 rebaseline. |
+| 3.1 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T202839Z-v1.0.1-cheap-minimax` | Iteration 1 cheap score. |
+| 3.1 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T203235Z-v1.0.1-full-minimax` | Iteration 1 full score. |
+| 3.1 | `advisor @review ... --file <BENCHLOG/results/code/skills> --json` | `/home/sina/.advisor/sessions/20260709T224006-review` | Stable review: status ok, but Kimi/Minimax content says human decision required before next patch. |
 
 ## SOTA Questions
 | Run | Question | Reason | Sources quality summary |
 | --- | --- | --- | --- |
-| pending | pending | Phase 1 not started. | pending |
+| 1 | LLM-as-judge/code-review pipeline evaluation: metrics, injected-defect golden sets, self-preference and position bias. | Initial SOTA grounding for benchmark design. | Verification ok; buckets medium=7, vendor=1, weak=9, strong=0; artifact `/home/sina/.advisor/sessions/20260709T200534-sota`. |
+| 2 | Refined local low-cost multi-provider CLI code-review benchmark design: recall/precision/actionability, controlled pairs, SPB, generator/judge separation, cost/latency. | Run 1 lacked strong code-review-specific sources; refine toward local reproducible benchmark design. | Verification ok; buckets medium=4, weak=8, strong=0; artifact `/home/sina/.advisor/sessions/20260709T202545-sota`. |
 
 ## Benchmark Versions
 | Version | Changed? | Reason | Requires re-baseline? |
 | --- | --- | --- | --- |
-| pending | No | Benchmark design not created yet. | Yes once created. |
+| 1.0.0 | Initial | Phase 2 golden set/scorer/runner. | Baseline created. |
+| 1.0.1 | Yes | Fixed benchmark defect C: precision denominator and numbered-list counting. | Yes; v1.0.1 rebaseline done. Do not compare v1.0.0 and v1.0.1 without note. |
+| 1.0.2 | Yes | Scorer bugfix C: standalone none markers only count as empty; bullets containing words like `None`/`aucun` are now counted. | Yes; rebaseline required before comparing with v1.0.2. |
 
 ## Runs
 | Iteration | Benchmark version | advisor-dev commit | Score (axes 1-4) | Cost | Latency | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Phase 0 preflight | N/A | `6709bdf` | N/A | 0 model spend observed; no live/model calls. | N/A | Environment and static gates passed. |
+| Phase 2 cheap baseline | 1.0.0 | `ff28c58` | 88.607494 (33.607494/20/25/10) | 0.019265 | 119.958s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T195252Z-v1.0.0-cheap-minimax`. |
+| Phase 2 full baseline | 1.0.0 | `ff28c58` | 89.361536 (34.361536/20/25/10) | 0.046388 | 279.987s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T195510Z-v1.0.0-full-minimax`. |
+| Phase 2 v1.0.1 rebaseline | 1.0.1 | `7456afb` | 87.518267 (32.518267/20/25/10) | 0.047724 | 343.772s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T201952Z-v1.0.1-full-minimax`. |
+| Iteration 1 cheap | 1.0.1 | `c69d0be` | 88.872139 (33.872139/20/25/10) | 0.023539 | 209.760s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T202839Z-v1.0.1-cheap-minimax`. |
+| Iteration 1 full | 1.0.1 | `c69d0be` | 87.857418 (32.857418/20/25/10) | 0.050098 | 392.562s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T203235Z-v1.0.1-full-minimax`; delta vs v1.0.1 rebaseline +0.339151, below likely noise. |
 
 ## Decisions
 | Decision | Reason | Evidence | Date |
@@ -46,11 +65,14 @@
 | Created isolated workspace `/home/sina/advisor-dev`. | No existing `advisor-dev` Git workspace/config was present; user authorized creating one in a sensible location. | Earlier preflight found only stable `/home/sina/.config/advisor` and plugin source `/home/sina/plugins/adv-tools`; both outside a valid Git repo. | 2026-07-09 |
 | Use `bin/advisor-dev` wrapper instead of changing PATH/global install. | Keep stable advisor on PATH untouched while benchmarking/modifying dev. | `advisor doctor` stable reports `/home/sina/.config/advisor/config.json`; dev doctor reports `/home/sina/advisor-dev/.config/advisor-dev/config.json`. | 2026-07-09 |
 | Run plugin smoke with `--no-gate` during preflight. | Required non-mutant preflight; default smoke writes an advisor gate. | adv-tools README states default wrapper records `adv-tools-smoke` gate; `--no-gate` avoids mutation. | 2026-07-09 |
+| Applied Iteration 1 A/B patch to severity + verification contract. | Stable review of v1.0.1 baseline recommended improving Blockers/Minimal fix plan exploitability; patch was low-risk and attributable. | Commit `c69d0be`; gates passed (`pytest`, `ruff`, adversarial smoke). | 2026-07-09 |
+| Stop before next patch. | Stable `@review` artifact contains advisor content saying human decision required before proceeding; user constraint says stop on `needs_human`/human blocker. | `/home/sina/.advisor/sessions/20260709T224006-review`; Kimi and Minimax blockers. | 2026-07-09 |
 
 ## Open Questions
 | Question | Blocking? | Needs SOTA? | Needs human? |
 | --- | --- | --- | --- |
 | Should dev SOTA use a copied/symlinked `.env` for keyed sources, or public sources only? | Not yet; Phase 1 can start and report skipped keyed providers if absent. | No | Maybe if complete keyed-source parity is required. |
+| Before next patch, should we prioritize fixing benchmark scorer C/noise estimation or tune A/B persona/contract for minimax? | Resolved: prioritize C scorer/noise. | No (deep SOTA budget exhausted; no SOTA-normal blocker yet). | User chose option 1 on 2026-07-09. |
 
 <!-- Phase 1 update before SOTA run 2 -->
 
@@ -131,3 +153,32 @@ Reason for run 2:
 - Reason: stable advisor review artifact `/home/sina/.advisor/sessions/20260709T220111-review` found benchmark defect C: recall searched `Blockers + Important issues` but precision denominator used `Blockers` only, making valid findings in `Important issues` score as precision `0.0`; numbered lists were also undercounted.
 - Requires re-baseline: yes. Do not compare v1.0.0 and v1.0.1 without this note.
 - Patch commit: `7456afb`.
+
+
+### Phase 3 Iteration 1 Notes
+
+- Non-regression gate before scoring at commit `c69d0be`: `pytest` PASS (`135 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+- Patch commit: `c69d0be` (`advisor: clarify severity and verification contract`). Files changed: `advisor/advisor.py`, `advisor/tests/test_advisor.py`, `adv-tools/references/advisor-context-contract.md`, `adv-tools/skills/adv-review/SKILL.md`, `adv-tools/skills/adv-critique/SKILL.md`, `adv-tools/skills/adv-plan/SKILL.md`.
+- Patch classification: A (CLI advisor output contract) + B (adv-tools skills/context contract). No benchmark modification in this iteration.
+- Cheap benchmark artifact: `/home/sina/advisor-dev/benchmarks/results/20260709T202839Z-v1.0.1-cheap-minimax`; score `88.872139`; axes quality `33.872139/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.023539`; latency total `209.760s`.
+- Official full benchmark artifact: `/home/sina/advisor-dev/benchmarks/results/20260709T203235Z-v1.0.1-full-minimax`; score `87.857418`; axes quality `32.857418/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.050098`; latency total `392.562s`.
+- Comparable baseline: v1.0.1 full `/home/sina/advisor-dev/benchmarks/results/20260709T201952Z-v1.0.1-full-minimax`; score `87.518267`; axes quality `32.518267/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.047724`; latency total `343.772s`.
+- Delta vs comparable v1.0.1 baseline: `+0.339151` total / `+0.339151` axis1 quality. Treat as not significant until variance/noise is measured.
+- Stable advisor review artifact: `/home/sina/.advisor/sessions/20260709T224006-review`; command used stable `/home/sina/.local/bin/advisor` with `@review` on BENCHLOG, baseline/final results, CLI and skill/context files.
+- Stable review classification:
+  - A: no high-confidence CLI defect beyond possible future persona/prompt tuning; changing minimax persona requires a human/product decision.
+  - B: skills/context improved, but future work may require stricter brief structure for acceptance criteria/known risks and cost/latency/provider constraints.
+  - C: likely remaining benchmark/scorer issues: matcher and precision denominator may still scan different surfaces for cases with `matched_defects=[D1]` and `reported_issue_bullets=0`; run-to-run noise around `0.34` points; real-case actionability may measure brief construction more than advisor quality.
+- Stop condition reached: stable review content from Kimi/Minimax says human decision required before the next patch. No further benchmark modification or A/B patch applied.
+
+
+### Benchmark Version 1.0.2 Notes
+
+- User decision after Iteration 1 stop: prioritize option 1, benchmark/scorer C and noise estimation.
+- Confirmed defect C: `scripts/bench_advisor_quality.py::bullet_count` treated any section containing `(none)`, `none`, or `aucun` as empty. Old full artifacts had valid bullets containing `Aucun E3 visible` and ``None` default`, producing `reported_issue_bullets=0` despite `matched_defects=["D1"]`.
+- Patch: count only standalone none markers as empty; count non-none bullet/list items even when the text mentions `None` or `aucun`. Added `tests/test_bench_advisor_quality.py` regression.
+- Targeted no-model validation on old v1.0.1 artifacts after patch:
+  - `injected-sota-bucket-006`: `reported_issue_bullets=9`, `precision=0.111111`, `score=0.728889` (previous full result had `reported_issue_bullets=0`, `precision=0.0`, `score=0.706667`).
+  - `injected-cost-latency-008`: `reported_issue_bullets=9`, `precision=0.111111`, `score=0.822222` (previous full result had `reported_issue_bullets=0`, `precision=0.0`, `score=0.8`).
+- Gates before rebaseline: `pytest` PASS (`137 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+- Requires rebaseline: yes. Do not compare v1.0.1 and v1.0.2 scores without this note.
