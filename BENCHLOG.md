@@ -35,6 +35,11 @@
 | 3.1 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T202839Z-v1.0.1-cheap-minimax` | Iteration 1 cheap score. |
 | 3.1 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T203235Z-v1.0.1-full-minimax` | Iteration 1 full score. |
 | 3.1 | `advisor @review ... --file <BENCHLOG/results/code/skills> --json` | `/home/sina/.advisor/sessions/20260709T224006-review` | Stable review: status ok, but Kimi/Minimax content says human decision required before next patch. |
+| 3.C | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T210254Z-v1.0.2-full-minimax` | v1.0.2 full rebaseline. |
+| 3.C | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T210958Z-v1.0.2-cheap-minimax` | Cheap noise run 1. |
+| 3.C | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T211239Z-v1.0.2-cheap-minimax` | Cheap noise run 2. |
+| 3.C | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T211442Z-v1.0.2-cheap-minimax` | Cheap noise run 3. |
+| 3.C | `advisor @review ... --file <BENCHLOG/scorer/tests/manifest/results> --json` | `/home/sina/.advisor/sessions/20260709T231845-review` | Stable review: v1.0.2 fix valid; next metric redesign needs human decision. |
 
 ## SOTA Questions
 | Run | Question | Reason | Sources quality summary |
@@ -58,6 +63,10 @@
 | Phase 2 v1.0.1 rebaseline | 1.0.1 | `7456afb` | 87.518267 (32.518267/20/25/10) | 0.047724 | 343.772s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T201952Z-v1.0.1-full-minimax`. |
 | Iteration 1 cheap | 1.0.1 | `c69d0be` | 88.872139 (33.872139/20/25/10) | 0.023539 | 209.760s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T202839Z-v1.0.1-cheap-minimax`. |
 | Iteration 1 full | 1.0.1 | `c69d0be` | 87.857418 (32.857418/20/25/10) | 0.050098 | 392.562s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T203235Z-v1.0.1-full-minimax`; delta vs v1.0.1 rebaseline +0.339151, below likely noise. |
+| Benchmark fix rebaseline | 1.0.2 | `9f98f4d` | 89.667993 (34.667993/20/25/10) | 0.055010 | 381.100s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T210254Z-v1.0.2-full-minimax`; C scorer fix, not comparable to v1.0.1 without version note. |
+| Benchmark fix noise cheap #1 | 1.0.2 | `9f98f4d` | 88.804279 (33.804279/20/25/10) | 0.021340 | 149.202s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T210958Z-v1.0.2-cheap-minimax`. |
+| Benchmark fix noise cheap #2 | 1.0.2 | `9f98f4d` | 88.367509 (33.367509/20/25/10) | 0.014134 | 118.040s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T211239Z-v1.0.2-cheap-minimax`. |
+| Benchmark fix noise cheap #3 | 1.0.2 | `9f98f4d` | 88.527142 (33.527142/20/25/10) | 0.022025 | 190.830s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T211442Z-v1.0.2-cheap-minimax`. |
 
 ## Decisions
 | Decision | Reason | Evidence | Date |
@@ -67,12 +76,15 @@
 | Run plugin smoke with `--no-gate` during preflight. | Required non-mutant preflight; default smoke writes an advisor gate. | adv-tools README states default wrapper records `adv-tools-smoke` gate; `--no-gate` avoids mutation. | 2026-07-09 |
 | Applied Iteration 1 A/B patch to severity + verification contract. | Stable review of v1.0.1 baseline recommended improving Blockers/Minimal fix plan exploitability; patch was low-risk and attributable. | Commit `c69d0be`; gates passed (`pytest`, `ruff`, adversarial smoke). | 2026-07-09 |
 | Stop before next patch. | Stable `@review` artifact contains advisor content saying human decision required before proceeding; user constraint says stop on `needs_human`/human blocker. | `/home/sina/.advisor/sessions/20260709T224006-review`; Kimi and Minimax blockers. | 2026-07-09 |
+| User selected benchmark/scorer C next. | Resolved prior human choice by selecting option 1. | User reply `1`; v1.0.2 scorer patch commit `9f98f4d`. | 2026-07-09 |
+| Stop before metric redesign. | Stable review says precision semantics and false-positive-trap scoring are methodology/product decisions requiring explicit human answer before further scorer patching. | `/home/sina/.advisor/sessions/20260709T231845-review`; Sonnet Blockers and Kimi Minimal fix plan. | 2026-07-09 |
 
 ## Open Questions
 | Question | Blocking? | Needs SOTA? | Needs human? |
 | --- | --- | --- | --- |
 | Should dev SOTA use a copied/symlinked `.env` for keyed sources, or public sources only? | Not yet; Phase 1 can start and report skipped keyed providers if absent. | No | Maybe if complete keyed-source parity is required. |
 | Before next patch, should we prioritize fixing benchmark scorer C/noise estimation or tune A/B persona/contract for minimax? | Resolved: prioritize C scorer/noise. | No (deep SOTA budget exhausted; no SOTA-normal blocker yet). | User chose option 1 on 2026-07-09. |
+| For remaining C work, what precision semantics and false-positive-trap scoring should the benchmark use? | Yes before further scorer metric redesign. | No. | Yes; stable review flagged this as a true human decision. |
 
 <!-- Phase 1 update before SOTA run 2 -->
 
@@ -182,3 +194,26 @@ Reason for run 2:
   - `injected-cost-latency-008`: `reported_issue_bullets=9`, `precision=0.111111`, `score=0.822222` (previous full result had `reported_issue_bullets=0`, `precision=0.0`, `score=0.8`).
 - Gates before rebaseline: `pytest` PASS (`137 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
 - Requires rebaseline: yes. Do not compare v1.0.1 and v1.0.2 scores without this note.
+
+
+### Benchmark Version 1.0.2 Rebaseline + Noise
+
+- Full rebaseline artifact: `/home/sina/advisor-dev/benchmarks/results/20260709T210254Z-v1.0.2-full-minimax`; score `89.667993`; axes quality `34.667993/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.055010`; latency total `381.100s`.
+- Cheap noise artifacts:
+  1. `/home/sina/advisor-dev/benchmarks/results/20260709T210958Z-v1.0.2-cheap-minimax` — score `88.804279`; cost `0.021340`; latency `149.202s`.
+  2. `/home/sina/advisor-dev/benchmarks/results/20260709T211239Z-v1.0.2-cheap-minimax` — score `88.367509`; cost `0.014134`; latency `118.040s`.
+  3. `/home/sina/advisor-dev/benchmarks/results/20260709T211442Z-v1.0.2-cheap-minimax` — score `88.527142`; cost `0.022025`; latency `190.830s`.
+- Cheap noise summary: mean `88.566310`, sample stdev `0.220956`, min `88.367509`, max `88.804279`, range `0.436770`. Treat future cheap deltas below about `0.44` as noise unless confirmed by repeated runs or full benchmark.
+- No `needs_human` occurred in v1.0.2 full or cheap noise runs.
+
+
+### Stable Review After v1.0.2 C Fix
+
+- Stable review artifact: `/home/sina/.advisor/sessions/20260709T231845-review`; command used stable `/home/sina/.local/bin/advisor @review` with BENCHLOG, scorer, regression tests, manifest, v1.0.2 full report, and 3 cheap reports.
+- Review status: all advisors returned `status=ok`; no CLI `needs_human` status.
+- Stable review consensus:
+  - v1.0.2 `bullet_count` / `is_none_marker` fix is valid and covered by targeted regression tests.
+  - Remaining A: none evidenced in reviewed files.
+  - Remaining B: none evidenced in reviewed files for this C-fix review.
+  - Remaining C: full-profile noise is not measured; current cheap noise range applies only to cheap subset; `false_positive_traps` are present in manifest but not scored; current precision formula treats extra bullets as false positives without validating whether they are actually false.
+- Human-decision blocker before further metric redesign: define precision semantics and whether/how to score `false_positive_traps`. No further scorer metric patch applied after this review.
