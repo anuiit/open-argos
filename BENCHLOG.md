@@ -107,3 +107,20 @@ Reason for run 2:
 - Proposed design doc: `docs/phase2-benchmark-design.md`
 - Installation list: none proposed for Benchmark v1.0.0.
 - Execution status: paused before creating fixtures/runner/baseline, per requirement to present design + installation list before execution.
+
+### Phase 2 Setup + Baseline Notes
+
+- Benchmark setup commit: `a9c6a96`, then lint/timeout/provider fixes through `ff28c58` before baseline.
+- Gate `bench-setup`: `/home/sina/.advisor/sessions/gates/bench-setup.json` state `pass`.
+- Non-regression before scoring: `pytest` PASS (135 passed, 22 subtests), `ruff` PASS, `smoke --adversarial --no-gate` PASS (20 checks / 10 features).
+- Setup issue: initial cheap run with `kimi` timed out at 900s on `opencode-go/kimi-k2.7-code` and left an orphan provider process; orphan was killed. This was treated as a benchmark setup flaw, before official baseline.
+- Setup issue: first `minimax` cheap run stopped on a content-based `needs_human` false positive in the runner. Artifact inspection showed advisor result statuses were `ok`; runner was fixed to stop only on exit code 3 or structured result status `needs_human`.
+
+### Phase 2 Baseline Level 1
+
+- Cheap run artifact: `/home/sina/advisor-dev/benchmarks/results/20260709T195252Z-v1.0.0-cheap-minimax`
+- Cheap run score: `88.607494/100`; axes: quality `33.607494/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.019265`; latency total `119.958s`.
+- Official full baseline artifact: `/home/sina/advisor-dev/benchmarks/results/20260709T195510Z-v1.0.0-full-minimax`
+- Official full baseline score: `89.361536/100`; axes: quality `34.361536/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.046388`; latency total `279.987s`.
+- Official full baseline advisor-dev commit: `ff28c58`.
+- Benchmark version: `1.0.0`; judge/candidate config frozen in `benchmarks/frozen/judge-v1.json` with candidate advisor `minimax`.
