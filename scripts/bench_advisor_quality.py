@@ -74,7 +74,7 @@ def section_map(text: str) -> dict[str, str]:
 def bullet_count(section: str) -> int:
     if not section or re.search(r"\(none\)|\bnone\b|aucun", section, re.I):
         return 0
-    return len(re.findall(r"^\s*[-*]\s+", section, re.M)) or (1 if section.strip() else 0)
+    return len(re.findall(r"^\s*(?:[-*]|\d+[.)])\s+", section, re.M)) or (1 if section.strip() else 0)
 
 
 def contains_any(text: str, terms: list[str]) -> bool:
@@ -98,8 +98,10 @@ def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], dura
             matched.append(defect["id"])
     recall = len(matched) / len(known) if known else None
     reported_blockers = bullet_count(blockers)
+    reported_important = bullet_count(important)
+    reported_issue_bullets = reported_blockers + reported_important
     if known:
-        precision = min(len(matched), reported_blockers) / reported_blockers if reported_blockers else 0.0
+        precision = min(len(matched), reported_issue_bullets) / reported_issue_bullets if reported_issue_bullets else 0.0
     else:
         precision = 1.0 if reported_blockers <= 1 else 0.75
 
@@ -141,6 +143,7 @@ def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], dura
         "actionability": round(actionability, 6),
         "matched_defects": matched,
         "reported_blockers": reported_blockers,
+        "reported_issue_bullets": reported_issue_bullets,
         "cost": round(cost, 6),
         "wall_duration_sec": round(duration, 3),
         "model_duration_sec": round(model_duration, 3),
