@@ -80,3 +80,15 @@ Refined question for SOTA run 2:
 Reason for run 2:
 
 - Run 1 verified evidence integrity but had no `strong` bucket and only two medium sources directly useful for SPB; most code-specific review evidence was bucketed weak due topical scoring. The second run narrows the topic to code-review benchmark design and asks explicitly for primary/reproducible sources so Phase 2 benchmark design can be grounded in sources suitable for a local CLI harness.
+
+### Phase 1 Run 2 Notes
+
+- Artifact: `/home/sina/.advisor/sessions/20260709T202545-sota`
+- Report: `/home/sina/.advisor/sessions/20260709T202545-sota/report.md`
+- Summary: `/home/sina/.advisor/sessions/20260709T202545-sota/summary.json`
+- Verification: `/home/sina/.advisor/sessions/20260709T202545-sota/verification.json`
+- Verification status: `ok`; invalid evidence IDs: 0; missing citations: 0; cited count: 12/12.
+- Quality buckets: `medium=4`, `weak=8`, `strong=0`.
+- Source health caveats: arXiv had 6 no-relevant-result errors; Brave returned one HTTP 429; Semantic Scholar skipped due missing `S2_API_KEY`; strict-topic filtered 24 results total.
+- Cost: total `0.820419` (`kimi=0`, `sonnet=0.110559`, `fable=0.70986`).
+- Finding: refined query still failed to retrieve primary strong/medium code-review judge-evaluation evidence. The word `harness` likely polluted retrieval with Harness.io and generic agent-harness content. Further SOTA-deep-high runs are disallowed by constraint; any later SOTA must be `@sota-normal --strict-topic` only for a documented blocker.
