@@ -51,3 +51,32 @@
 | Question | Blocking? | Needs SOTA? | Needs human? |
 | --- | --- | --- | --- |
 | Should dev SOTA use a copied/symlinked `.env` for keyed sources, or public sources only? | Not yet; Phase 1 can start and report skipped keyed providers if absent. | No | Maybe if complete keyed-source parity is required. |
+
+<!-- Phase 1 update before SOTA run 2 -->
+
+### Phase 1 Run 1 Notes
+
+- Artifact: `/home/sina/.advisor/sessions/20260709T200534-sota`
+- Report: `/home/sina/.advisor/sessions/20260709T200534-sota/report.md`
+- Summary: `/home/sina/.advisor/sessions/20260709T200534-sota/summary.json`
+- Verification: `/home/sina/.advisor/sessions/20260709T200534-sota/verification.json`
+- Verification status: `ok`; invalid evidence IDs: 0; missing citations: 0.
+- Quality buckets: `medium=7`, `vendor=1`, `weak=9`, `strong=0`.
+- Source health caveats: Brave returned one HTTP 429; Semantic Scholar skipped due missing `S2_API_KEY`; strict-topic filtered 17 results total.
+- Cost: total `1.082601` (`kimi=0`, `sonnet=0.188061`, `fable=0.89454`).
+
+Directions selected for refinement (strictly grounded in medium evidence where possible):
+
+1. Self-preference bias (SPB) as a measurable judge failure mode: Run 1 medium evidence includes E8 (`Quantifying and Mitigating Self-Preference Bias of LLM Judges`) and E6 (`Self-Preference Bias in AI-Assisted Peer Review`). Applicable to advisor harness because provider outputs can be scored for self-favoring or same-family favoritism using paired/equivalent cases.
+2. Bias-controlled paired fixtures instead of raw free-form reviews: E8 supports pair/equivalence designs for separating judge capability from bias; local harness can implement this without heavy infra by using seeded tasks with known defects and paired distractors.
+3. Explicit transfer-risk handling for code review: E6 is peer-review rather than code-review; Run 1 report identifies code-specific evidence as weaker. The second run should target code-review/SE-specific sources to avoid overfitting benchmark design to generic LLM-as-judge literature.
+4. Position/order robustness as a benchmark metric: Run 1 report flags position bias as operationally important but mostly weak/vendor in retrieved evidence. The refined run should seek stronger sources for positionally consistent accuracy, swap/randomization, and tie handling in code/review contexts.
+5. Actionability-oriented metrics for local CLI review harnesses: Run 1 did not retrieve strong/medium evidence for `Blockers` / `Minimal fix plan` exploitability, so the refined run should explicitly search for reproducible metrics: defect recall/precision, false-positive precision, fix-plan minimality/actionability, judge-human agreement, and cost/latency tradeoffs.
+
+Refined question for SOTA run 2:
+
+> Pour concevoir un benchmark local et peu coûteux d'un harness CLI multi-providers de review/critique/plan de code, quelles méthodes récentes et reproductibles existent pour évaluer des juges LLM sur des tâches de code review avec défauts injectés ou labels humains : métriques de recall/precision/actionabilité des sections Blockers et Minimal fix plan, golden sets avec paires contrôlées, positionally consistent accuracy, self-preference bias, séparation générateur/judge, calibration multi-juges, et reporting coût/latence ? Prioriser les sources académiques ou techniques primaires fortes/medium et exclure les guides marketing génériques.
+
+Reason for run 2:
+
+- Run 1 verified evidence integrity but had no `strong` bucket and only two medium sources directly useful for SPB; most code-specific review evidence was bucketed weak due topical scoring. The second run narrows the topic to code-review benchmark design and asks explicitly for primary/reproducible sources so Phase 2 benchmark design can be grounded in sources suitable for a local CLI harness.
