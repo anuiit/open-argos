@@ -1,0 +1,25 @@
+{
+  "name": "adv-tools",
+  "version": "0.1.8+codex.20260708140535",
+  "description": "Codex skills for the local advisor CLI, exposed as $adv-xxx commands.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Adv Tools",
+    "shortDescription": "Use local advisor reviews, critiques, vision, SOTA research, config, and gates from Codex.",
+    "longDescription": "Adv Tools exposes the local advisor CLI through Codex skills named adv-review, adv-critique, adv-plan, adv-vision, adv-sota, adv-config, adv-doctor, and adv-gate. The SOTA skill supports normal/deep research profiles, with normal as the default, and writes summary.json with source health and quality buckets. The plugin is a lightweight Codex facade; advisor itself never launches Codex.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "skills"
+    ],
+    "defaultPrompt": [
+      "Run $adv-doctor to check advisor/plugin readiness before using external advisors.",
+      "Run $adv-review on this implementation plan with relevant files.",
+      "Run $adv-critique on this diff and classify blockers vs improvements.",
+      "Run $adv-sota to research the latest source-backed state of a domain."
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+.advisor/
+.config/advisor-dev/.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.bak*

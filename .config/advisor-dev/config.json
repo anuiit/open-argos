@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "timeouts": {
+    "default": 900,
+    "opencode_go": 900,
+    "ollama_cloud": 1200,
+    "claude": 1200,
+    "minimax": 900,
+    "nemotron": 1200
+  }
+}
