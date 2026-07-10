@@ -78,3 +78,47 @@ def test_false_positive_traps_penalize_positive_dependency_recommendations() -> 
 def test_false_positive_traps_cap_penalty() -> None:
     hits = ["a", "b", "c"]
     assert bench.false_positive_penalty(hits) == 0.30
+
+
+def test_false_positive_traps_ignore_not_dependency_guidance() -> None:
+    assert not bench.false_positive_hit("do not add dependencies unless necessary", "We should not add a dependency here.")
+
+
+def test_false_positive_traps_cover_broad_rewrite_path() -> None:
+    assert not bench.false_positive_hit("do not propose broad rewrite without evidence", "Do not rewrite the whole module.")
+    assert bench.false_positive_hit("do not propose broad rewrite without evidence", "A broad rewrite is the simplest fix.")
+
+
+def test_false_positive_traps_cover_repo_access_claim_path() -> None:
+    assert not bench.false_positive_hit("do not claim access to omitted repository files", "I reviewed the attached brief only.")
+    assert bench.false_positive_hit("do not claim access to omitted repository files", "Elsewhere in the repo, this helper already exists.")
+
+
+def test_score_quality_applies_trap_penalty_cap_through_full_path() -> None:
+    case = {
+        "case_id": "multi-trap-case",
+        "kind": "real",
+        "mode": "review",
+        "known_defects": [],
+        "minimal_fix_requirements": [],
+        "false_positive_traps": [
+            "do not add dependencies unless necessary",
+            "do not propose broad rewrite without evidence",
+            "do not claim access to omitted repository files",
+        ],
+    }
+    content = """## Blockers
+- Add a new dependency.
+- A broad rewrite is required.
+- Elsewhere in the repo, a solution exists.
+## Important issues
+- (none)
+## Preferences
+- (none)
+## Minimal fix plan
+1. Install a package.
+"""
+    result = bench.score_quality(case, content, {"results": []}, 0.0, 0)
+    assert len(result["false_positive_hits"]) == 3
+    assert result["false_positive_penalty"] == 0.30
+    assert result["score"] == 0.70

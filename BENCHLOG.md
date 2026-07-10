@@ -57,6 +57,7 @@
 | 1.0.1 | Yes | Fixed benchmark defect C: precision denominator and numbered-list counting. | Yes; v1.0.1 rebaseline done. Do not compare v1.0.0 and v1.0.1 without note. |
 | 1.0.2 | Yes | Scorer bugfix C: standalone none markers only count as empty; bullets containing words like `None`/`aucun` are now counted. | Yes; rebaseline required before comparing with v1.0.2. |
 | 1.0.3 | Yes | Scorer adds conservative `false_positive_traps` penalty while preserving existing precision formula. | Yes; rebaseline required before comparing with v1.0.3. |
+| 1.0.4 | Yes | Scorer calibrates `false_positive_traps` negation handling and covers dependency/rewrite/repo-access trap paths. | Yes; rebaseline required before comparing with v1.0.4. |
 
 ## Runs
 | Iteration | Benchmark version | advisor-dev commit | Score (axes 1-4) | Cost | Latency | Notes |
@@ -254,3 +255,12 @@ Reason for run 2:
   - Remaining B: none evidenced.
   - Remaining C: trap tests are asymmetric (dependency only), `not add a dependency` negation is not covered, trap dispatch is brittle to manifest wording, and full-profile noise remains unmeasured.
 - Next selected follow-up: minimal C patch for trap regex/test coverage before any broader data-driven trap refactor or full-noise campaign.
+
+
+### Benchmark Version 1.0.4 Notes
+
+- Follow-up from stable v1.0.3 review artifact `/home/sina/.advisor/sessions/20260710T100335-review`.
+- Patch: calibrate trap negation handling for `not add a dependency`, avoid repo-access false positive on “reviewed the attached brief”, and add tests for dependency, broad rewrite, repo-access claim, and full `score_quality` penalty cap path.
+- Scope: C benchmark only; no advisor CLI or skills/context changes.
+- Gates before rebaseline: `pytest` PASS (`144 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+- Requires rebaseline: yes. Do not compare v1.0.3 and v1.0.4 scores without this note.

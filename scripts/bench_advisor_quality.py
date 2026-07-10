@@ -25,11 +25,11 @@ VERIFY_WORDS = ("test", "pytest", "ruff", "verify", "validation", "smoke", "chec
 BROAD_REWRITE_WORDS = ("rewrite everything", "rewrite the whole", "new framework", "new dependency")
 TRAP_PENALTY = 0.15
 MAX_TRAP_PENALTY = 0.30
-NEGATED_DEP_RE = re.compile(r"\b(?:no|without|avoid|do not|don't)\s+(?:add(?:ing)?\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?dependenc(?:y|ies)\b", re.I)
+NEGATED_DEP_RE = re.compile(r"\b(?:no|not|without|avoid|do not|don't)\s+(?:add(?:ing)?\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:dependenc(?:y|ies)|package|library|framework)\b", re.I)
 POSITIVE_DEP_RE = re.compile(r"\b(?:add|install|introduce|use)\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:package|library|dependenc(?:y|ies)|framework)\b", re.I)
-NEGATED_REWRITE_RE = re.compile(r"\b(?:no|without|avoid|do not|don't)\s+(?:broad\s+|whole\s+|unrelated\s+)?rewrite", re.I)
+NEGATED_REWRITE_RE = re.compile(r"\b(?:no|not|without|avoid|do not|don't)\s+(?:broad\s+|whole\s+|unrelated\s+)?rewrite", re.I)
 POSITIVE_REWRITE_RE = re.compile(r"\b(?:rewrite everything|rewrite the whole|rewrite unrelated|broad rewrite|new framework)\b", re.I)
-REPO_ACCESS_CLAIM_RE = re.compile(r"\b(?:i inspected|i reviewed|the repository shows|repo files show|elsewhere in the repo)\b", re.I)
+REPO_ACCESS_CLAIM_RE = re.compile(r"\b(?:i inspected (?!the attached)|i reviewed (?!the attached)|the repository shows|repo files show|elsewhere in the repo)\b", re.I)
 
 
 def utc_stamp() -> str:
