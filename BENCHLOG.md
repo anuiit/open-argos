@@ -46,6 +46,12 @@
 | 3.C3 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T082058Z-v1.0.4-cheap-minimax` | v1.0.4 cheap score; all `false_positive_hits=[]`. |
 | 3.C3 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T082557Z-v1.0.4-full-minimax` | v1.0.4 full score; all `false_positive_hits=[]`. |
 | 3.C3 | `advisor @review ... --file <BENCHLOG/scorer/tests/manifest/results> --json` | `/home/sina/.advisor/sessions/20260710T104008-review` | Stable review: no blockers; remaining work C benchmark calibration/measurement hygiene. |
+| 3.2 | `pytest -q && ruff check . && smoke --adversarial` | N/A | PASS after advisor output-contract/context patch; 148 tests + 22 subtests, ruff clean, 20/10 smoke checks. |
+| 3.2 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T155627Z-v1.0.7-cheap-minimax` | Advisor prompt/contract patch cheap run. |
+| 3.2 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T155906Z-v1.0.7-full-minimax` | Advisor prompt/contract patch full run; mixed signal, stable review required. |
+| 3.2 | `advisor @review ... --file <BENCHLOG/code/results> --json` | `/home/sina/.advisor/sessions/20260710T180853-review` | Partial stable review: Sonnet+MiniMax ok, Kimi hung on opencode-go and run was interrupted after practical timeout; no `needs_human` in normalized outputs. |
+| 3.2 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T162438Z-v1.0.7-cheap-minimax` | Tuned advisor prompt/contract cheap run after removing hard caps. |
+| 3.2 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax` | Tuned advisor prompt/contract full run; no validated improvement, patch reverted. |
 
 ## SOTA Questions
 | Run | Question | Reason | Sources quality summary |
@@ -79,6 +85,10 @@
 | False-positive trap full | 1.0.3 | `fdda965` | 88.859475 (33.859475/20/25/10) | 0.055155 | 604.495s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T075258Z-v1.0.3-full-minimax`; all `false_positive_hits=[]`; not comparable to v1.0.2 without version note. |
 | Trap calibration cheap | 1.0.4 | `3e42c4d` | 89.127136 (34.127136/20/25/10) | 0.024433 | 291.789s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T082058Z-v1.0.4-cheap-minimax`; all `false_positive_hits=[]`. |
 | Trap calibration full | 1.0.4 | `3e42c4d` | 88.408654 (33.408654/20/25/10) | 0.057371 | 820.466s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T082557Z-v1.0.4-full-minimax`; all `false_positive_hits=[]`; not comparable to v1.0.3 without version note. |
+| Iteration 2 advisor-contract cheap | 1.0.7 | uncommitted | 94.307500 (39.307500/20/25/10) | 0.022945 | 152.699s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T155627Z-v1.0.7-cheap-minimax`; delta vs v1.0.7 cheap rebaseline `-0.427500`, within/near cheap noise. |
+| Iteration 2 advisor-contract full | 1.0.7 | uncommitted | 94.023076 (39.023076/20/25/10) | 0.046687 | 442.418s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T155906Z-v1.0.7-full-minimax`; delta vs v1.0.7 full rebaseline `+1.429124`, cost `-0.004230`, latency `-20.824s`; caveat: real-case saturation, injected actionability worsened. |
+| Iteration 2 tuned advisor-contract cheap | 1.0.7 | uncommitted/reverted | 94.435003 (39.435003/20/25/10) | 0.031985 | 241.421s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T162438Z-v1.0.7-cheap-minimax`; better than as-is cheap but below v1.0.7 cheap baseline. |
+| Iteration 2 tuned advisor-contract full | 1.0.7 | uncommitted/reverted | 92.599719 (37.599719/20/25/10) | 0.062666 | 582.013s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax`; delta vs v1.0.7 full baseline `+0.005767` only, cost/latency worse, injected quality down; patch reverted. |
 
 ## Decisions
 | Decision | Reason | Evidence | Date |
@@ -90,6 +100,7 @@
 | Stop before next patch. | Stable `@review` artifact contains advisor content saying human decision required before proceeding; user constraint says stop on `needs_human`/human blocker. | `/home/sina/.advisor/sessions/20260709T224006-review`; Kimi and Minimax blockers. | 2026-07-09 |
 | User selected benchmark/scorer C next. | Resolved prior human choice by selecting option 1. | User reply `1`; v1.0.2 scorer patch commit `9f98f4d`. | 2026-07-09 |
 | Stop before metric redesign. | Stable review says precision semantics and false-positive-trap scoring are methodology/product decisions requiring explicit human answer before further scorer patching. | `/home/sina/.advisor/sessions/20260709T231845-review`; Sonnet Blockers and Kimi Minimal fix plan. | 2026-07-09 |
+| Rejected/reverted advisor output-contract patch. | Stable review and tuned full run showed no robust advisor performance improvement: initial gain was real-case saturation; tuned full delta was only `+0.005767` with worse cost/latency and lower injected quality. | Stable partial review `/home/sina/.advisor/sessions/20260710T180853-review`; tuned full `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax`; product files reverted, BENCHLOG retained. | 2026-07-10 |
 
 ## Open Questions
 | Question | Blocking? | Needs SOTA? | Needs human? |
@@ -411,3 +422,27 @@ Reason for run 2:
 - Measurement effect: v1.0.7 no longer saturates all real cases. Full diagnostics: `axis1_real_quality_score=0.9055`, `axis1_injected_quality_score=0.791622`, `axis1_real_actionability_mean=0.79`, `axis1_injected_actionability_mean=0.795833`, `axis1_real_actionability_full_count=2`, `axis1_false_positive_hit_count=0`.
 - Scorer control: `scorer-real-actionability-weak-004` PASS with observed `actionability=0.35` and `score=0.7075`, proving weak structured/generic plans no longer receive full actionability.
 - Remaining risks: live false-positive trap hits remain zero; full-profile noise still unmeasured beyond single full runs per version; axis4 cost/latency remains binary.
+
+
+### Advisor Output Contract Patch — Iteration 2 A/B
+
+- Patch scope: A/B only. Updated `advisor/advisor.py` baseline output contract and aligned `adv-tools/references/advisor-context-contract.md`; no benchmark scoring change and no provider/config change.
+- Intent: reduce duplicate/unsubstantiated findings, keep `Blockers` focused on correctness/safety/API/data/privacy/auth/tool risks, require each `Minimal fix plan` step to name a concrete target plus concrete verification, and discourage new dependencies/broad rewrites/claims about omitted files without evidence.
+- Prompt-size issue discovered: the first wording was too verbose and broke compact prompt truncation tests. The contract was shortened; regression test now checks key tokens (`fusionne les doublons`, `cible concrète`, `Ne propose pas de dépendance`).
+- Gates after patch: `pytest -q` PASS (`148 passed, 22 subtests`), `ruff check .` PASS, `python3 adv-tools/scripts/smoke_adv_tools.py --adversarial --no-gate --advisor-py advisor/advisor.py` PASS (`20 checks / 10 features`).
+- Cheap post-patch artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T155627Z-v1.0.7-cheap-minimax`; score `94.307500`; axes `39.307500/20/25/10`; cost `0.022945`; latency `152.699s`; no `needs_human`.
+- Full post-patch artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T155906Z-v1.0.7-full-minimax`; score `94.023076`; axes `39.023076/20/25/10`; cost `0.046687`; latency `442.418s`; no `needs_human`.
+- Comparable v1.0.7 baseline full: `/home/sina/advisor-dev/benchmarks/results/20260710T123236Z-v1.0.7-full-minimax`; score `92.593952`; cost `0.050917`; latency `463.242s`.
+- Full delta vs v1.0.7 baseline: `+1.429124` total/axis1 quality, cost `-0.004230` (~8.3% lower), latency `-20.824s` (~4.5% lower).
+- Caveat / review target: full score gain comes mostly from real cases saturating (`axis1_real_quality_score=1.0`, `axis1_real_actionability_mean=1.0`, `axis1_real_actionability_full_count=5`). Injected metrics worsened (`axis1_injected_quality_score=0.784167` vs baseline `0.791622`; `axis1_injected_actionability_mean=0.729167` vs baseline `0.795833`). Stable review required before claiming true advisor performance improvement.
+
+
+### Advisor Output Contract Patch Review, Tuning, and Revert
+
+- Stable review artifact: `/home/sina/.advisor/sessions/20260710T180853-review`. Sonnet and MiniMax normalized outputs returned `status=ok`; no `needs_human`. Kimi hung on `opencode-go/kimi-k2.7-code`; the run was interrupted after a practical timeout and not retried.
+- Stable review consensus from available outputs: do **not** claim the as-is patch as a performance improvement; the `+1.429124` full gain is likely benchmark real-case saturation / scorer-shape reward hacking, while injected metrics moved backward.
+- Minimal tune attempted: removed hard `1-3`/`1-5` caps and changed wording to preserve distinct defects while keeping deduplication and concrete verification intent. Gates passed after tuning: `pytest -q` PASS (`148 passed, 22 subtests`), `ruff check .` PASS, adversarial smoke PASS (`20 checks / 10 features`).
+- Tuned cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T162438Z-v1.0.7-cheap-minimax`; score `94.435003`; injected quality `0.793889`; injected actionability `0.844444`; no `needs_human`.
+- Tuned full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax`; score `92.599719`; axes `37.599719/20/25/10`; cost `0.062666`; latency `582.013s`; no `needs_human`.
+- Comparable v1.0.7 full baseline: `/home/sina/advisor-dev/benchmarks/results/20260710T123236Z-v1.0.7-full-minimax`; score `92.593952`; cost `0.050917`; latency `463.242s`; injected quality `0.791622`; injected actionability `0.795833`.
+- Final decision for this A/B experiment: revert product code. Tuned full delta is only `+0.005767`, with cost `+0.011749`, latency `+118.771s`, real-case saturation still `5`, and injected quality lower (`0.732768` in tuned full diagnostics). This is not a validated advisor performance improvement.
