@@ -141,3 +141,37 @@ def test_static_scorer_cases_pass() -> None:
     rows = [bench.score_scorer_case(case) for case in manifest.get("scorer_cases", [])]
     assert rows
     assert {row["status"] for row in rows} == {"pass"}
+
+
+def test_real_case_actionability_discriminates_structured_concrete_fix_plan() -> None:
+    case = {
+        "case_id": "real-actionability",
+        "kind": "real",
+        "mode": "review",
+        "known_defects": [],
+        "minimal_fix_requirements": ["structured_fix_steps", "concrete_fix_target"],
+    }
+    strong = """## Blockers
+- (none)
+## Important issues
+- (none)
+## Preferences
+- (none)
+## Minimal fix plan
+1. Update `advisor.py` to validate the status field.
+2. Add `test_status_validation` and run pytest.
+"""
+    weak = """## Blockers
+- (none)
+## Important issues
+- (none)
+## Preferences
+- (none)
+## Minimal fix plan
+Fix it later.
+"""
+    strong_score = bench.score_quality(case, strong, {"results": []}, 0.0, 0)
+    weak_score = bench.score_quality(case, weak, {"results": []}, 0.0, 0)
+    assert strong_score["actionability"] == 1.0
+    assert weak_score["actionability"] == 0.0
+    assert strong_score["score"] > weak_score["score"]

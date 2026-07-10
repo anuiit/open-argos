@@ -334,3 +334,46 @@ Reason for run 2:
 - Status: no `needs_human`; all SOTA, infra, and scorer calibration cases PASS.
 - Observed live trap hits: all live quality cases still `false_positive_hits=[]`; positive-hit coverage now comes from provider-free scorer cases, not from minimax output randomness.
 - Interpretation: score movement versus v1.0.4 cheap (`89.127136`) is not directly comparable because benchmark version changed and minimax output variance is present; scorer additions are green and did not consume provider tokens.
+
+
+### Benchmark Version 1.0.5 Rebaseline
+
+- Full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T113438Z-v1.0.5-full-minimax`; score `88.074592`; axes quality `33.074592/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.052590`; latency total `458.843s`.
+- Advisor artifact paths: quality cases under `/home/sina/advisor-dev/benchmarks/results/20260710T113438Z-v1.0.5-full-minimax/advisor-artifacts/`; internal benchmark artifact `/home/sina/advisor-dev/benchmarks/results/20260710T113438Z-v1.0.5-full-minimax/advisor-artifacts/20260710T134217-benchmark`.
+- Status: no `needs_human`; all SOTA, infra, and scorer calibration cases PASS.
+- Observed live trap hits: all live quality cases still `false_positive_hits=[]`; static scorer cases verify positive/negated trap behavior and missing-test actionability at zero model cost.
+- Interpretation: v1.0.5 is a benchmark measurement change and not directly comparable to v1.0.4. Compared with v1.0.4 full (`88.408654`), the small drop is consistent with minimax output variance; scorer cases are pass-through unless the benchmark scorer regresses.
+- Commit: `335c865` (`bench: add scorer calibration cases`).
+
+
+### Stable Review After v1.0.5 Scorer Calibration
+
+- Stable review artifact: `/home/sina/.advisor/sessions/20260710T134245-review`; command used stable `/home/sina/.local/bin/advisor @review` with BENCHLOG, runner, manifest, tests, and v1.0.5 cheap/full reports.
+- Review status: all advisors returned `status=ok`; no CLI `needs_human` status. Kimi used configured fallback from `opencode-go/kimi-k2.7-code` to `ollama_cloud/kimi-k2.7-code` after a slow provider route.
+- Cost: sonnet `0.405279`, minimax `0.02725596`, kimi `0`; total observed `0.43253496`.
+- Stable review consensus:
+  - Remaining A: none evidenced in reviewed files.
+  - Remaining B: none evidenced in reviewed files; v1.0.5 did not touch skills/context contract.
+  - Remaining C: static scorer cases are mechanically valid and useful in-pipeline, but scorer self-checks are mixed into the infra axis; real-case actionability is degenerate (`0.3` constant) because generic requirements (`section headings`, `actionable steps`, `verification`) are lexical and rarely matched; cost/latency axis remains binary; trap route coverage lacks repo-access negation/paraphrase tests; full-profile noise remains unmeasured.
+- Next selected follow-up: C-only v1.0.6 benchmark patch focused on the highest measurement defect: make real-case actionability discriminate structure/content instead of the current lexical floor. Keep scorer/infra split as a report diagnostic if it stays low-risk; defer cost-axis redesign because that is a broader methodology decision.
+
+
+### Benchmark Version 1.0.6 Notes
+
+- Follow-up from stable review artifact `/home/sina/.advisor/sessions/20260710T134245-review`.
+- Patch: replace real-case lexical `minimal_fix_requirements` (`section headings`, `actionable steps`, `verification`) with structural requirements `structured_fix_steps` and `concrete_fix_target`; add scorer support for those requirements and expose `fix_requirement_hits` / `fix_requirement_count` in results.
+- Patch: add `axis_diagnostics` to distinguish infra CLI score, scorer self-check score, and combined axis3 score while preserving total scoring weights for now.
+- Scope: C benchmark measurement only; no advisor CLI or skills/context behavior changed.
+- Gates before scoring: `pytest` PASS (`147 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+- Requires rebaseline: yes. Do not compare v1.0.5 and v1.0.6 quality scores without noting the real-case actionability semantic change.
+
+
+### Benchmark Version 1.0.6 Rebaseline
+
+- Cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T120018Z-v1.0.6-cheap-minimax`; score `94.785004`; axes quality `39.785004/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.025299`; latency total `190.882s`.
+- Full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T120335Z-v1.0.6-full-minimax`; score `93.891208`; axes quality `38.891208/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.042296`; latency total `447.376s`.
+- Advisor artifact paths: cheap quality cases under `/home/sina/advisor-dev/benchmarks/results/20260710T120018Z-v1.0.6-cheap-minimax/advisor-artifacts/`; full quality cases under `/home/sina/advisor-dev/benchmarks/results/20260710T120335Z-v1.0.6-full-minimax/advisor-artifacts/`; full internal benchmark artifact `/home/sina/advisor-dev/benchmarks/results/20260710T120335Z-v1.0.6-full-minimax/advisor-artifacts/20260710T141103-benchmark`.
+- Status: no `needs_human`; all SOTA, infra, and scorer calibration cases PASS.
+- Measurement effect: real cases now score as structured/concrete/actionable when the Minimal fix plan contains multiple steps plus concrete file/function/flag/test targets. In v1.0.6 full all 5 real cases had `actionability=1.0`; in v1.0.5 full all 5 real cases had `actionability=0.3` due to lexical requirements. This is a benchmark calibration improvement, not an advisor-dev output quality jump.
+- Axis diagnostics: full `axis3_infra_cli_score=1.0`, `axis3_scorer_selfcheck_score=1.0`, `axis3_infra_combined_score=1.0`.
+- Observed live trap hits: all live quality cases still `false_positive_hits=[]`; static scorer cases remain the positive/negated trap coverage.

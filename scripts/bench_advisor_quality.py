@@ -30,6 +30,7 @@ POSITIVE_DEP_RE = re.compile(r"\b(?:add|install|introduce|use)\s+(?:a\s+|an\s+|t
 NEGATED_REWRITE_RE = re.compile(r"\b(?:no|not|without|avoid|do not|don't)\s+(?:broad\s+|whole\s+|unrelated\s+)?rewrite", re.I)
 POSITIVE_REWRITE_RE = re.compile(r"\b(?:rewrite everything|rewrite the whole|rewrite unrelated|broad rewrite|new framework)\b", re.I)
 REPO_ACCESS_CLAIM_RE = re.compile(r"\b(?:i inspected (?!the attached)|i reviewed (?!the attached)|the repository shows|repo files show|elsewhere in the repo)\b", re.I)
+CONCRETE_FIX_TARGET_RE = re.compile(r"(`[^`]+`|(?:^|[\s/])[-\w]+\.(?:py|md|json|toml|yaml|yml)\b|--[-\w]+|\b(?:test_[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]+\(\)))", re.M)
 
 
 def utc_stamp() -> str:
@@ -101,6 +102,15 @@ def contains_any(text: str, terms: list[str]) -> bool:
     return any(t.lower() in low for t in terms)
 
 
+def fix_requirement_hit(requirement: str, fix: str) -> bool:
+    req = requirement.lower()
+    if req == "structured_fix_steps":
+        return bullet_count(fix) >= 2
+    if req == "concrete_fix_target":
+        return bool(CONCRETE_FIX_TARGET_RE.search(fix))
+    return req in fix.lower()
+
+
 def false_positive_trap_route(trap: str) -> str | None:
     trap_low = trap.lower()
     if "add dependencies" in trap_low:
@@ -158,7 +168,7 @@ def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], dura
 
     fix_requirements = case.get("minimal_fix_requirements", [])
     fix_low = fix.lower()
-    req_hits = sum(1 for req in fix_requirements if req.lower() in fix_low)
+    req_hits = sum(1 for req in fix_requirements if fix_requirement_hit(req, fix))
     verification_hit = any(w in fix_low for w in VERIFY_WORDS)
     broad_penalty = 0.25 if any(w in fix_low for w in BROAD_REWRITE_WORDS) else 0.0
     actionability = 0.0
@@ -192,6 +202,8 @@ def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], dura
         "status": status,
         "score": round(quality, 6),
         "section_score": round(section_score, 6),
+        "fix_requirement_hits": req_hits,
+        "fix_requirement_count": len(fix_requirements),
         "recall": None if recall is None else round(recall, 6),
         "precision": round(precision, 6),
         "actionability": round(actionability, 6),
@@ -326,6 +338,9 @@ def render_report(payload: dict[str, Any]) -> str:
     ]
     for axis, value in payload["axis_scores"].items():
         lines.append(f"- {axis}: `{value}`")
+    diagnostics = payload.get("axis_diagnostics", {})
+    if diagnostics:
+        lines.append("- axis3 diagnostics: " + ", ".join(f"{key}=`{value}`" for key, value in diagnostics.items()))
     lines += ["", "## Quality cases"]
     for row in payload["quality_cases"]:
         lines.append(f"- {row['case_id']}: score={row['score']} status={row['status']} recall={row['recall']} precision={row['precision']} cost={row['cost']} artifact={row.get('artifact_dir')}")
@@ -365,6 +380,8 @@ def main() -> int:
     sota_score = statistics.mean([r["score"] for r in sota_rows]) if sota_rows else 0.0
     infra_inputs = infra_rows + scorer_rows
     infra_score = statistics.mean([r["score"] for r in infra_inputs]) if infra_inputs else 0.0
+    infra_cli_score = statistics.mean([r["score"] for r in infra_rows]) if infra_rows else 0.0
+    scorer_score = statistics.mean([r["score"] for r in scorer_rows]) if scorer_rows else 0.0
     costs = [r.get("cost", 0.0) for r in quality_rows]
     latencies = [r.get("wall_duration_sec", 0.0) for r in quality_rows]
     # Cost axis rewards complete cost telemetry and low-but-nonnegative costs; quality cases all expose cost field here.
@@ -386,6 +403,11 @@ def main() -> int:
         "result_dir": str(result_dir),
         "score": total,
         "axis_scores": axis_scores,
+        "axis_diagnostics": {
+            "axis3_infra_cli_score": round(infra_cli_score, 6),
+            "axis3_scorer_selfcheck_score": round(scorer_score, 6),
+            "axis3_infra_combined_score": round(infra_score, 6),
+        },
         "cost": summarize(costs),
         "latency_sec": summarize(latencies),
         "quality_cases": quality_rows,
