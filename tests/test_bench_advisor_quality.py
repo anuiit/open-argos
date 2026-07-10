@@ -175,3 +175,12 @@ Fix it later.
     assert strong_score["actionability"] == 1.0
     assert weak_score["actionability"] == 0.0
     assert strong_score["score"] > weak_score["score"]
+
+
+def test_concrete_fix_target_rejects_generic_backticks_and_single_target() -> None:
+    generic = """1. Investigate the issue.\n2. Run `it` again.\n"""
+    one_target = """1. Update `advisor.py`.\n2. Run tests.\n"""
+    two_targets = """1. Update `advisor.py`.\n2. Add `test_status_validation`.\n"""
+    assert not bench.fix_requirement_hit("concrete_fix_target", generic)
+    assert not bench.fix_requirement_hit("concrete_fix_target", one_target)
+    assert bench.fix_requirement_hit("concrete_fix_target", two_targets)

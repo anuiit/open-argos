@@ -30,7 +30,13 @@ POSITIVE_DEP_RE = re.compile(r"\b(?:add|install|introduce|use)\s+(?:a\s+|an\s+|t
 NEGATED_REWRITE_RE = re.compile(r"\b(?:no|not|without|avoid|do not|don't)\s+(?:broad\s+|whole\s+|unrelated\s+)?rewrite", re.I)
 POSITIVE_REWRITE_RE = re.compile(r"\b(?:rewrite everything|rewrite the whole|rewrite unrelated|broad rewrite|new framework)\b", re.I)
 REPO_ACCESS_CLAIM_RE = re.compile(r"\b(?:i inspected (?!the attached)|i reviewed (?!the attached)|the repository shows|repo files show|elsewhere in the repo)\b", re.I)
-CONCRETE_FIX_TARGET_RE = re.compile(r"(`[^`]+`|(?:^|[\s/])[-\w]+\.(?:py|md|json|toml|yaml|yml)\b|--[-\w]+|\b(?:test_[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]+\(\)))", re.M)
+CONCRETE_FIX_TARGET_RE = re.compile(
+    r"(`(?:[^`\s]+\.(?:py|md|json|toml|yaml|yml)|--[-\w]+|test_[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]+\(\))`"
+    r"|(?:^|[\s/])[-\w]+\.(?:py|md|json|toml|yaml|yml)\b"
+    r"|--[-\w]+"
+    r"|\b(?:test_[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]+\(\)))",
+    re.M,
+)
 
 
 def utc_stamp() -> str:
@@ -102,12 +108,16 @@ def contains_any(text: str, terms: list[str]) -> bool:
     return any(t.lower() in low for t in terms)
 
 
+def concrete_fix_targets(fix: str) -> set[str]:
+    return {match.group(0).strip(" `") for match in CONCRETE_FIX_TARGET_RE.finditer(fix)}
+
+
 def fix_requirement_hit(requirement: str, fix: str) -> bool:
     req = requirement.lower()
     if req == "structured_fix_steps":
         return bullet_count(fix) >= 2
     if req == "concrete_fix_target":
-        return bool(CONCRETE_FIX_TARGET_RE.search(fix))
+        return len(concrete_fix_targets(fix)) >= 2
     return req in fix.lower()
 
 
@@ -325,6 +335,11 @@ def summarize(values: list[float]) -> dict[str, float]:
     return {"total": round(sum(values), 6), "mean": round(statistics.mean(values), 6), "p95": round(p95, 6)}
 
 
+def mean_score(rows: list[dict[str, Any]], key: str) -> float:
+    values = [float(row.get(key) or 0.0) for row in rows]
+    return round(statistics.mean(values), 6) if values else 0.0
+
+
 def render_report(payload: dict[str, Any]) -> str:
     lines = [
         f"# Advisor benchmark v{payload['benchmark_version']} — {payload['profile']}",
@@ -382,6 +397,8 @@ def main() -> int:
     infra_score = statistics.mean([r["score"] for r in infra_inputs]) if infra_inputs else 0.0
     infra_cli_score = statistics.mean([r["score"] for r in infra_rows]) if infra_rows else 0.0
     scorer_score = statistics.mean([r["score"] for r in scorer_rows]) if scorer_rows else 0.0
+    real_quality_rows = [r for r in quality_rows if r.get("kind") == "real"]
+    injected_quality_rows = [r for r in quality_rows if r.get("kind") == "injected"]
     costs = [r.get("cost", 0.0) for r in quality_rows]
     latencies = [r.get("wall_duration_sec", 0.0) for r in quality_rows]
     # Cost axis rewards complete cost telemetry and low-but-nonnegative costs; quality cases all expose cost field here.
@@ -404,6 +421,12 @@ def main() -> int:
         "score": total,
         "axis_scores": axis_scores,
         "axis_diagnostics": {
+            "axis1_real_quality_score": mean_score(real_quality_rows, "score"),
+            "axis1_injected_quality_score": mean_score(injected_quality_rows, "score"),
+            "axis1_real_actionability_mean": mean_score(real_quality_rows, "actionability"),
+            "axis1_injected_actionability_mean": mean_score(injected_quality_rows, "actionability"),
+            "axis1_real_actionability_full_count": sum(1 for row in real_quality_rows if row.get("actionability") == 1.0),
+            "axis1_false_positive_hit_count": sum(len(row.get("false_positive_hits", [])) for row in quality_rows),
             "axis3_infra_cli_score": round(infra_cli_score, 6),
             "axis3_scorer_selfcheck_score": round(scorer_score, 6),
             "axis3_infra_combined_score": round(infra_score, 6),

@@ -377,3 +377,37 @@ Reason for run 2:
 - Measurement effect: real cases now score as structured/concrete/actionable when the Minimal fix plan contains multiple steps plus concrete file/function/flag/test targets. In v1.0.6 full all 5 real cases had `actionability=1.0`; in v1.0.5 full all 5 real cases had `actionability=0.3` due to lexical requirements. This is a benchmark calibration improvement, not an advisor-dev output quality jump.
 - Axis diagnostics: full `axis3_infra_cli_score=1.0`, `axis3_scorer_selfcheck_score=1.0`, `axis3_infra_combined_score=1.0`.
 - Observed live trap hits: all live quality cases still `false_positive_hits=[]`; static scorer cases remain the positive/negated trap coverage.
+
+
+### Stable Review After v1.0.6 Real-Case Actionability Calibration
+
+- Stable review artifact: `/home/sina/.advisor/sessions/20260710T141133-review`; command used stable `/home/sina/.local/bin/advisor @review` with BENCHLOG, runner, manifest, tests, and v1.0.6 cheap/full reports.
+- Review status: all advisors returned `status=ok`; no CLI `needs_human` status. Kimi used configured fallback from `opencode-go/kimi-k2.7-code` to `ollama_cloud/kimi-k2.7-code` after a slow provider route.
+- Cost: sonnet `0.364695`, minimax `0.0169422`, kimi `0`; total observed `0.3816372`.
+- Stable review consensus:
+  - Remaining A: none evidenced.
+  - Remaining B: none evidenced.
+  - Remaining C: v1.0.6 fixed the old lexical floor but over-corrected: all 5 real cases reached `actionability=1.0` and `score=1.0`, indicating ceiling/saturation. `CONCRETE_FIX_TARGET_RE` is too permissive; `structured_fix_steps` only checks two bullets; no weak/medium negative-control scorer case prevents this inflation. Axis3 diagnostics are useful, but axis1 lacks real-vs-injected/actionability/trap diagnostics.
+- Next selected follow-up: immediate C-only v1.0.7 calibration patch: add weak/medium real-actionability scorer controls, tighten `concrete_fix_target`, add axis1 diagnostics, and mark v1.0.6 as a miscalibrated intermediate baseline.
+
+
+### Benchmark Version 1.0.7 Notes
+
+- Follow-up from stable review artifact `/home/sina/.advisor/sessions/20260710T141133-review`.
+- Patch: tighten `concrete_fix_target` so generic backticks or a single target do not satisfy the requirement; require at least two distinct concrete targets (file/flag/test/function-shaped target).
+- Patch: add provider-free scorer control `scorer-real-actionability-weak-004`, which has two weak steps and a generic backtick but should score only structural actionability (`0.35`) and not full actionability.
+- Patch: extend `axis_diagnostics` with axis1 real/injected quality means, actionability means, real-actionability full-count, and total false-positive-hit count.
+- Scope: C benchmark measurement only; no advisor CLI or skills/context behavior changed.
+- Gates before scoring: `pytest` PASS (`148 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+- Requires rebaseline: yes. v1.0.6 is treated as a miscalibrated intermediate baseline for real-case actionability saturation.
+
+
+### Benchmark Version 1.0.7 Rebaseline
+
+- Cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T122922Z-v1.0.7-cheap-minimax`; score `94.735000`; axes quality `39.735000/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.023310`; latency total `187.938s`.
+- Full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T123236Z-v1.0.7-full-minimax`; score `92.593952`; axes quality `37.593952/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.050917`; latency total `463.242s`.
+- Advisor artifact paths: cheap quality cases under `/home/sina/advisor-dev/benchmarks/results/20260710T122922Z-v1.0.7-cheap-minimax/advisor-artifacts/`; full quality cases under `/home/sina/advisor-dev/benchmarks/results/20260710T123236Z-v1.0.7-full-minimax/advisor-artifacts/`; full internal benchmark artifact `/home/sina/advisor-dev/benchmarks/results/20260710T123236Z-v1.0.7-full-minimax/advisor-artifacts/20260710T144020-benchmark`.
+- Status: no `needs_human`; all SOTA, infra, and scorer calibration cases PASS.
+- Measurement effect: v1.0.7 no longer saturates all real cases. Full diagnostics: `axis1_real_quality_score=0.9055`, `axis1_injected_quality_score=0.791622`, `axis1_real_actionability_mean=0.79`, `axis1_injected_actionability_mean=0.795833`, `axis1_real_actionability_full_count=2`, `axis1_false_positive_hit_count=0`.
+- Scorer control: `scorer-real-actionability-weak-004` PASS with observed `actionability=0.35` and `score=0.7075`, proving weak structured/generic plans no longer receive full actionability.
+- Remaining risks: live false-positive trap hits remain zero; full-profile noise still unmeasured beyond single full runs per version; axis4 cost/latency remains binary.
