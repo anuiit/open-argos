@@ -53,6 +53,7 @@
 | 1.0.0 | Initial | Phase 2 golden set/scorer/runner. | Baseline created. |
 | 1.0.1 | Yes | Fixed benchmark defect C: precision denominator and numbered-list counting. | Yes; v1.0.1 rebaseline done. Do not compare v1.0.0 and v1.0.1 without note. |
 | 1.0.2 | Yes | Scorer bugfix C: standalone none markers only count as empty; bullets containing words like `None`/`aucun` are now counted. | Yes; rebaseline required before comparing with v1.0.2. |
+| 1.0.3 | Yes | Scorer adds conservative `false_positive_traps` penalty while preserving existing precision formula. | Yes; rebaseline required before comparing with v1.0.3. |
 
 ## Runs
 | Iteration | Benchmark version | advisor-dev commit | Score (axes 1-4) | Cost | Latency | Notes |
@@ -217,3 +218,13 @@ Reason for run 2:
   - Remaining B: none evidenced in reviewed files for this C-fix review.
   - Remaining C: full-profile noise is not measured; current cheap noise range applies only to cheap subset; `false_positive_traps` are present in manifest but not scored; current precision formula treats extra bullets as false positives without validating whether they are actually false.
 - Human-decision blocker before further metric redesign: define precision semantics and whether/how to score `false_positive_traps`. No further scorer metric patch applied after this review.
+
+
+### Benchmark Version 1.0.3 Notes
+
+- User delegated methodology choice: “fais ce qui te semble être le plus pertinent”.
+- Decision: preserve existing precision formula as a concision proxy and add explicit `false_positive_traps` scoring because traps already exist in every manifest case but were unused.
+- Patch: conservative trap heuristics detect positive recommendations for forbidden dependencies/rewrite/repo-access claims while ignoring negated guidance such as “do not add dependencies” / “without new dependencies”. Penalty is `0.15` per hit, capped at `0.30`, subtracted from quality.
+- Tests added/updated in `tests/test_bench_advisor_quality.py` for negated dependency guidance, positive dependency false positive, and penalty cap.
+- Gates before rebaseline: `pytest` PASS (`140 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+- Requires rebaseline: yes. Do not compare v1.0.2 and v1.0.3 scores without this note.

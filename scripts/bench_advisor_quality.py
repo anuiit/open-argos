@@ -23,6 +23,13 @@ ADVISOR_DEV = ROOT / "bin/advisor-dev"
 SECTION_NAMES = ["Blockers", "Important issues", "Preferences", "Minimal fix plan"]
 VERIFY_WORDS = ("test", "pytest", "ruff", "verify", "validation", "smoke", "check", "assert")
 BROAD_REWRITE_WORDS = ("rewrite everything", "rewrite the whole", "new framework", "new dependency")
+TRAP_PENALTY = 0.15
+MAX_TRAP_PENALTY = 0.30
+NEGATED_DEP_RE = re.compile(r"\b(?:no|without|avoid|do not|don't)\s+(?:add(?:ing)?\s+)?(?:a\s+|an\s+|the\s+)?(?:new\s+)?dependenc(?:y|ies)\b", re.I)
+POSITIVE_DEP_RE = re.compile(r"\b(?:add|install|introduce|use)\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:package|library|dependenc(?:y|ies)|framework)\b", re.I)
+NEGATED_REWRITE_RE = re.compile(r"\b(?:no|without|avoid|do not|don't)\s+(?:broad\s+|whole\s+|unrelated\s+)?rewrite", re.I)
+POSITIVE_REWRITE_RE = re.compile(r"\b(?:rewrite everything|rewrite the whole|rewrite unrelated|broad rewrite|new framework)\b", re.I)
+REPO_ACCESS_CLAIM_RE = re.compile(r"\b(?:i inspected|i reviewed|the repository shows|repo files show|elsewhere in the repo)\b", re.I)
 
 
 def utc_stamp() -> str:
@@ -94,6 +101,27 @@ def contains_any(text: str, terms: list[str]) -> bool:
     return any(t.lower() in low for t in terms)
 
 
+def false_positive_hit(trap: str, content: str) -> bool:
+    trap_low = trap.lower()
+    if "add dependencies" in trap_low:
+        return bool(POSITIVE_DEP_RE.search(content)) and not NEGATED_DEP_RE.search(content)
+    if "broad rewrite" in trap_low or "rewrite unrelated" in trap_low:
+        return bool(POSITIVE_REWRITE_RE.search(content)) and not NEGATED_REWRITE_RE.search(content)
+    if "claim access" in trap_low and "omitted repository" in trap_low:
+        return bool(REPO_ACCESS_CLAIM_RE.search(content))
+    return False
+
+
+def false_positive_hits(case: dict[str, Any], content: str) -> list[str]:
+    return [trap for trap in case.get("false_positive_traps", []) if false_positive_hit(trap, content)]
+
+
+def false_positive_penalty(hits: list[str]) -> float:
+    return min(MAX_TRAP_PENALTY, TRAP_PENALTY * len(hits))
+
+
+
+
 def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], duration: float, exit_code: int) -> dict[str, Any]:
     sections = section_map(content)
     section_hits = sum(1 for s in SECTION_NAMES if s in sections)
@@ -129,10 +157,13 @@ def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], dura
     else:
         actionability = 1.0 if fix.strip() else 0.0
 
+    trap_hits = false_positive_hits(case, content)
+    trap_penalty = false_positive_penalty(trap_hits)
     if known:
         quality = 0.25 * section_score + 0.35 * (recall or 0.0) + 0.20 * precision + 0.20 * actionability
     else:
         quality = 0.55 * section_score + 0.45 * actionability
+    quality = max(0.0, quality - trap_penalty)
 
     cost = 0.0
     model_duration = 0.0
@@ -153,6 +184,8 @@ def score_quality(case: dict[str, Any], content: str, meta: dict[str, Any], dura
         "recall": None if recall is None else round(recall, 6),
         "precision": round(precision, 6),
         "actionability": round(actionability, 6),
+        "false_positive_hits": trap_hits,
+        "false_positive_penalty": round(trap_penalty, 6),
         "matched_defects": matched,
         "reported_blockers": reported_blockers,
         "reported_issue_bullets": reported_issue_bullets,

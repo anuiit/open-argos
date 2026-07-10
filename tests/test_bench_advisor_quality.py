@@ -44,3 +44,37 @@ def test_score_quality_precision_counts_bullets_that_mention_none_words() -> Non
     assert result["matched_defects"] == ["D1"]
     assert result["reported_issue_bullets"] == 3
     assert result["precision"] == 0.333333
+
+
+def test_false_positive_traps_ignore_negated_dependency_guidance() -> None:
+    assert not bench.false_positive_hit("do not add dependencies unless necessary", "Keep stdlib only; do not add dependencies.")
+    assert not bench.false_positive_hit("do not add dependencies unless necessary", "Fix this without new dependencies.")
+
+
+def test_false_positive_traps_penalize_positive_dependency_recommendations() -> None:
+    case = {
+        "case_id": "trap-case",
+        "kind": "injected",
+        "mode": "review",
+        "known_defects": [{"id": "D1", "expected_terms": ["path traversal"]}],
+        "minimal_fix_requirements": ["test"],
+        "false_positive_traps": ["do not add dependencies unless necessary"],
+    }
+    content = """## Blockers
+- Path traversal allows escaping base_dir.
+## Important issues
+- Add a new dependency to sanitize paths.
+## Preferences
+- (none)
+## Minimal fix plan
+1. Add a pytest regression test.
+"""
+    result = bench.score_quality(case, content, {"results": []}, 0.0, 0)
+    assert result["false_positive_hits"] == ["do not add dependencies unless necessary"]
+    assert result["false_positive_penalty"] == 0.15
+    assert result["score"] == 0.75
+
+
+def test_false_positive_traps_cap_penalty() -> None:
+    hits = ["a", "b", "c"]
+    assert bench.false_positive_penalty(hits) == 0.30

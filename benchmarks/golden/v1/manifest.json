@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "created_at": "2026-07-09",
   "judge_config": "benchmarks/frozen/judge-v1.json",
   "cases": [
@@ -348,5 +348,5 @@
       "expected_status": "pass"
     }
   ],
-  "version_reason": "Scorer bugfix: standalone none markers only count as empty; issue bullets containing words like None/aucun are counted. Requires re-baseline."
+  "version_reason": "Scorer adds conservative false_positive_traps penalty while preserving existing precision formula. Requires re-baseline."
 }
