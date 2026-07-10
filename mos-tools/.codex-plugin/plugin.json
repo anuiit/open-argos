@@ -1,0 +1,25 @@
+{
+  "name": "mos-tools",
+  "version": "0.1.8+codex.20260708140535",
+  "description": "Codex skills for the local mosaic CLI, exposed as $adv-xxx commands.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Mos Tools",
+    "shortDescription": "Use local mosaic reviews, critiques, vision, SOTA research, config, and gates from Codex.",
+    "longDescription": "Mos Tools exposes the local mosaic CLI through Codex skills named mos-review, mos-critique, mos-plan, mos-vision, mos-sota, mos-config, mos-doctor, and mos-gate. The SOTA skill supports normal/deep research profiles, with normal as the default, and writes summary.json with source health and quality buckets. The plugin is a lightweight Codex facade; mosaic itself never launches Codex.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "skills"
+    ],
+    "defaultPrompt": [
+      "Run $mos-doctor to check mosaic/plugin readiness before using external mosaics.",
+      "Run $mos-review on this implementation plan with relevant files.",
+      "Run $mos-critique on this diff and classify blockers vs improvements.",
+      "Run $mos-sota to research the latest source-backed state of a domain."
+    ]
+  }
+}

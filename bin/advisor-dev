@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export ADVISOR_CONFIG_DIR="$ROOT/.config/advisor-dev"
-export ADVISOR_ARTIFACT_ROOT="$ROOT/.advisor/sessions"
-export ADVISOR_LOCK_ROOT="$ROOT/.advisor/locks"
-exec python3 "$ROOT/advisor/advisor.py" "$@"

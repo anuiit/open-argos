@@ -1,12 +1,12 @@
 {
   "benchmark_version": "1.0.1",
   "created_at": "2026-07-09",
-  "stable_judge_advisor": "fable",
-  "baseline_candidate_advisor": "minimax",
-  "quality_run_shape": "advisor-dev <@review|@critique|@plan> <brief> --advisor minimax --single-ok --json",
+  "stable_judge_mosaic": "fable",
+  "baseline_candidate_mosaic": "minimax",
+  "quality_run_shape": "mosaic-dev <@review|@critique|@plan> <brief> --mosaic minimax --single-ok --json",
   "deterministic_scorers": "section compliance, manifest keyword recall/precision, minimal fix actionability, SOTA JSON integrity, internal benchmark infra checks",
   "dev_config_sha256": "cff4da872396c92cf50b5e83e80d3ae75ee971708ec30d603bbd15903efe62fc",
-  "self_evaluation_bias_note": "sonnet/fable may be both candidate advisors and judges; LLM judge scores are separate from deterministic scores and judge config changes require a new benchmark version.",
+  "self_evaluation_bias_note": "sonnet/fable may be both candidate mosaics and judges; LLM judge scores are separate from deterministic scores and judge config changes require a new benchmark version.",
   "runner_timeout_sec": 1300,
   "scorer_change": "Precision denominator changed to Blockers+Important findings; numbered lists count as bullets."
 }

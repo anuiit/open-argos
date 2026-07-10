@@ -1,11 +1,11 @@
-# advisor-dev
+# mosaic-dev
 
-Isolated benchmark-driven working copy for the local `advisor` CLI and `adv-tools` plugin facade.
+Isolated benchmark-driven working copy for the local `mosaic` CLI and `mos-tools` plugin facade.
 
-- Stable advisor remains `/home/sina/.local/bin/advisor -> /home/sina/.config/advisor/advisor.py`.
-- Dev CLI entrypoint: `./bin/advisor-dev`.
-- Dev config: `.config/advisor-dev/config.json`.
-- Dev artifacts: `.advisor/sessions/`.
-- Dev locks: `.advisor/locks/`.
+- Stable mosaic remains `/home/sina/.local/bin/mosaic -> /home/sina/.config/mosaic/mosaic.py`.
+- Dev CLI entrypoint: `./bin/mosaic-dev`.
+- Dev config: `.config/mosaic-dev/config.json`.
+- Dev artifacts: `.mosaic/sessions/`.
+- Dev locks: `.mosaic/locks/`.
 
-Do not promote changes to the stable advisor/plugin without explicit human validation.
+Do not promote changes to the stable mosaic/plugin without explicit human validation.

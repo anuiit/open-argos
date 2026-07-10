@@ -290,7 +290,7 @@
           "expected_terms": [
             "untrusted",
             "ignore",
-            "nested advisor",
+            "nested mosaic",
             "tool execution"
           ]
         }
@@ -321,7 +321,7 @@
             "negative cost",
             "missing cost",
             "duration",
-            "per advisor"
+            "per mosaic"
           ]
         }
       ],
@@ -351,7 +351,7 @@
   "infra_cases": [
     {
       "case_id": "internal-benchmark-001",
-      "method": "advisor benchmark --json",
+      "method": "mosaic benchmark --json",
       "expected_status": "pass"
     }
   ],
