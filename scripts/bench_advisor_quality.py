@@ -101,13 +101,24 @@ def contains_any(text: str, terms: list[str]) -> bool:
     return any(t.lower() in low for t in terms)
 
 
-def false_positive_hit(trap: str, content: str) -> bool:
+def false_positive_trap_route(trap: str) -> str | None:
     trap_low = trap.lower()
     if "add dependencies" in trap_low:
-        return bool(POSITIVE_DEP_RE.search(content)) and not NEGATED_DEP_RE.search(content)
+        return "dependency"
     if "broad rewrite" in trap_low or "rewrite unrelated" in trap_low:
-        return bool(POSITIVE_REWRITE_RE.search(content)) and not NEGATED_REWRITE_RE.search(content)
+        return "rewrite"
     if "claim access" in trap_low and "omitted repository" in trap_low:
+        return "repo_access"
+    return None
+
+
+def false_positive_hit(trap: str, content: str) -> bool:
+    route = false_positive_trap_route(trap)
+    if route == "dependency":
+        return bool(POSITIVE_DEP_RE.search(content)) and not NEGATED_DEP_RE.search(content)
+    if route == "rewrite":
+        return bool(POSITIVE_REWRITE_RE.search(content)) and not NEGATED_REWRITE_RE.search(content)
+    if route == "repo_access":
         return bool(REPO_ACCESS_CLAIM_RE.search(content))
     return False
 

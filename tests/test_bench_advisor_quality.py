@@ -122,3 +122,15 @@ def test_score_quality_applies_trap_penalty_cap_through_full_path() -> None:
     assert len(result["false_positive_hits"]) == 3
     assert result["false_positive_penalty"] == 0.30
     assert result["score"] == 0.70
+
+
+def test_manifest_false_positive_traps_have_known_routes() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    traps = {
+        trap
+        for case in manifest["cases"]
+        for trap in case.get("false_positive_traps", [])
+    }
+    assert traps
+    unrouted = sorted(trap for trap in traps if bench.false_positive_trap_route(trap) is None)
+    assert unrouted == []

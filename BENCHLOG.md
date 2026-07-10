@@ -289,3 +289,11 @@ Reason for run 2:
   - Remaining B: none evidenced.
   - Remaining C: trap detector still has no positive live hits, manifest wording can silently bypass substring dispatch, repo-access wording coverage can improve, full-profile noise remains unmeasured, and v1.0.4 full latency was high.
 - Next selected follow-up: minimal C guard so every manifest `false_positive_traps` entry maps to an explicit scorer route; this is test/scorer hygiene and does not require a new benchmark version unless scoring semantics change.
+
+
+### Trap Dispatch Guard Notes
+
+- Follow-up from stable v1.0.4 review artifact `/home/sina/.advisor/sessions/20260710T104008-review`.
+- Patch: refactor trap dispatch into `false_positive_trap_route()` and add `test_manifest_false_positive_traps_have_known_routes` so future manifest trap wording cannot silently bypass scorer routing.
+- Scope: C benchmark/scorer hygiene only. No benchmark version bump and no rebaseline because scoring semantics are unchanged for existing routed traps.
+- Gates: `pytest` PASS (`145 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
