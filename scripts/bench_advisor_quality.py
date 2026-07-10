@@ -268,6 +268,43 @@ def run_infra_case(case: dict[str, Any], artifact_root: Path) -> dict[str, Any]:
     return {"case_id": case["case_id"], "status": "pass" if exit_code == 0 and status == case.get("expected_status") else "fail", "score": round(score, 6), "internal_status": status, "artifact_dir": data.get("artifact_dir"), "wall_duration_sec": round(duration, 3), "stderr_tail": stderr[-500:]}
 
 
+def compare_expected(observed: dict[str, Any], expected: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    for key, value in expected.get("equals", {}).items():
+        if observed.get(key) != value:
+            failures.append(f"{key}: expected {value!r}, observed {observed.get(key)!r}")
+    for key, value in expected.get("min", {}).items():
+        if observed.get(key, 0) < value:
+            failures.append(f"{key}: expected >= {value!r}, observed {observed.get(key)!r}")
+    for key, value in expected.get("max", {}).items():
+        if observed.get(key, 0) > value:
+            failures.append(f"{key}: expected <= {value!r}, observed {observed.get(key)!r}")
+    return failures
+
+
+def score_scorer_case(case: dict[str, Any]) -> dict[str, Any]:
+    content = (ROOT / case["path"]).read_text()
+    quality_case = dict(case["quality_case"])
+    quality_case.setdefault("case_id", case["case_id"])
+    observed = score_quality(quality_case, content, {"results": []}, 0.0, 0)
+    failures = compare_expected(observed, case.get("expected", {}))
+    return {
+        "case_id": case["case_id"],
+        "status": "pass" if not failures else "fail",
+        "score": 1.0 if not failures else 0.0,
+        "failures": failures,
+        "observed": {
+            "score": observed["score"],
+            "recall": observed["recall"],
+            "precision": observed["precision"],
+            "actionability": observed["actionability"],
+            "false_positive_hits": observed["false_positive_hits"],
+            "false_positive_penalty": observed["false_positive_penalty"],
+            "matched_defects": observed["matched_defects"],
+        },
+    }
+
+
 def summarize(values: list[float]) -> dict[str, float]:
     if not values:
         return {"total": 0.0, "mean": 0.0, "p95": 0.0}
@@ -298,6 +335,9 @@ def render_report(payload: dict[str, Any]) -> str:
     lines += ["", "## Infra cases"]
     for row in payload["infra_cases"]:
         lines.append(f"- {row['case_id']}: score={row['score']} status={row['status']} artifact={row.get('artifact_dir')}")
+    lines += ["", "## Scorer calibration cases"]
+    for row in payload.get("scorer_cases", []):
+        lines.append(f"- {row['case_id']}: score={row['score']} status={row['status']} failures={len(row.get('failures', []))}")
     return "\n".join(lines) + "\n"
 
 
@@ -319,10 +359,12 @@ def main() -> int:
     quality_rows = [run_quality_case(case, args.advisor, artifact_root, args.timeout) for case in selected]
     sota_rows = [score_sota_case(case) for case in manifest.get("sota_cases", [])]
     infra_rows = [run_infra_case(case, artifact_root) for case in manifest.get("infra_cases", [])]
+    scorer_rows = [score_scorer_case(case) for case in manifest.get("scorer_cases", [])]
 
     quality_score = statistics.mean([r["score"] for r in quality_rows]) if quality_rows else 0.0
     sota_score = statistics.mean([r["score"] for r in sota_rows]) if sota_rows else 0.0
-    infra_score = statistics.mean([r["score"] for r in infra_rows]) if infra_rows else 0.0
+    infra_inputs = infra_rows + scorer_rows
+    infra_score = statistics.mean([r["score"] for r in infra_inputs]) if infra_inputs else 0.0
     costs = [r.get("cost", 0.0) for r in quality_rows]
     latencies = [r.get("wall_duration_sec", 0.0) for r in quality_rows]
     # Cost axis rewards complete cost telemetry and low-but-nonnegative costs; quality cases all expose cost field here.
@@ -349,6 +391,7 @@ def main() -> int:
         "quality_cases": quality_rows,
         "sota_cases": sota_rows,
         "infra_cases": infra_rows,
+        "scorer_cases": scorer_rows,
     }
     write_json(result_dir / "results.json", payload)
     (result_dir / "report.md").write_text(render_report(payload))

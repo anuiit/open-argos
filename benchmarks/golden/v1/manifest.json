@@ -1,5 +1,5 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "created_at": "2026-07-09",
   "judge_config": "benchmarks/frozen/judge-v1.json",
   "cases": [
@@ -348,5 +348,131 @@
       "expected_status": "pass"
     }
   ],
-  "version_reason": "Scorer calibrates false_positive_traps negation handling and covers dependency/rewrite/repo-access trap paths. Requires re-baseline."
+  "version_reason": "Adds static scorer calibration cases for false-positive trap hits, negated trap non-hits, and minimal-fix actionability. Requires re-baseline.",
+  "scorer_cases": [
+    {
+      "case_id": "scorer-trap-positive-001",
+      "path": "benchmarks/golden/v1/cases/scorer/trap-positive.md",
+      "quality_case": {
+        "kind": "scorer",
+        "mode": "review",
+        "known_defects": [
+          {
+            "id": "D1",
+            "expected_terms": [
+              "path traversal",
+              "base_dir"
+            ]
+          }
+        ],
+        "minimal_fix_requirements": [
+          "read_note",
+          "base_dir",
+          "test"
+        ],
+        "false_positive_traps": [
+          "do not add dependencies unless necessary",
+          "do not propose broad rewrite without evidence",
+          "do not claim access to omitted repository files"
+        ]
+      },
+      "expected": {
+        "equals": {
+          "matched_defects": [
+            "D1"
+          ],
+          "false_positive_hits": [
+            "do not add dependencies unless necessary",
+            "do not propose broad rewrite without evidence",
+            "do not claim access to omitted repository files"
+          ],
+          "false_positive_penalty": 0.3
+        },
+        "min": {
+          "actionability": 0.99
+        },
+        "max": {
+          "score": 0.7
+        }
+      }
+    },
+    {
+      "case_id": "scorer-trap-negated-002",
+      "path": "benchmarks/golden/v1/cases/scorer/trap-negated.md",
+      "quality_case": {
+        "kind": "scorer",
+        "mode": "review",
+        "known_defects": [
+          {
+            "id": "D1",
+            "expected_terms": [
+              "path traversal",
+              "base_dir"
+            ]
+          }
+        ],
+        "minimal_fix_requirements": [
+          "read_note",
+          "base_dir",
+          "test"
+        ],
+        "false_positive_traps": [
+          "do not add dependencies unless necessary",
+          "do not propose broad rewrite without evidence",
+          "do not claim access to omitted repository files"
+        ]
+      },
+      "expected": {
+        "equals": {
+          "matched_defects": [
+            "D1"
+          ],
+          "false_positive_hits": [],
+          "false_positive_penalty": 0.0
+        },
+        "min": {
+          "actionability": 0.99,
+          "score": 0.85
+        }
+      }
+    },
+    {
+      "case_id": "scorer-actionability-missing-test-003",
+      "path": "benchmarks/golden/v1/cases/scorer/actionability-missing-test.md",
+      "quality_case": {
+        "kind": "scorer",
+        "mode": "review",
+        "known_defects": [
+          {
+            "id": "D1",
+            "expected_terms": [
+              "needs_human",
+              "exit code 3",
+              "auth"
+            ]
+          }
+        ],
+        "minimal_fix_requirements": [
+          "needs_human",
+          "3",
+          "test"
+        ],
+        "false_positive_traps": [
+          "do not add dependencies unless necessary"
+        ]
+      },
+      "expected": {
+        "equals": {
+          "matched_defects": [
+            "D1"
+          ],
+          "false_positive_hits": [],
+          "false_positive_penalty": 0.0
+        },
+        "max": {
+          "actionability": 0.7
+        }
+      }
+    }
+  ]
 }

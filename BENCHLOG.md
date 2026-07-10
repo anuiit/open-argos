@@ -297,3 +297,40 @@ Reason for run 2:
 - Patch: refactor trap dispatch into `false_positive_trap_route()` and add `test_manifest_false_positive_traps_have_known_routes` so future manifest trap wording cannot silently bypass scorer routing.
 - Scope: C benchmark/scorer hygiene only. No benchmark version bump and no rebaseline because scoring semantics are unchanged for existing routed traps.
 - Gates: `pytest` PASS (`145 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
+
+
+### SOTA Normal Follow-up — Benchmark / Advisor Harness Improvement
+
+- Command: stable `/home/sina/.local/bin/advisor @sota-normal --strict-topic --since 2024-01-01 "LLM-as-judge evaluation for automated code review and external advisor harnesses: measuring defect recall, false positives, actionability of fix plans, judge variance, cost/token-aware model routing, golden sets with injected defects, and benchmark robustness" --json`.
+- Artifact: `/home/sina/.advisor/sessions/20260710T125529-sota`; profile `normal`; no `--high`; strict topic enabled.
+- Status: syntheses `kimi` and `sonnet` ok; reviewer `glm_max` ok; no `needs_human` status observed. Kimi and GLM used configured fallback from `opencode-go` to `ollama_cloud` after slow paid-code route.
+- Verification: `/home/sina/.advisor/sessions/20260710T125529-sota/verification.json` status `ok`; invalid evidence IDs `[]`; missing citations `[]`; uncited evidence `0`.
+- Source profile: evidence count `5`; quality counts `medium=4`, `weak=1`; source health has no source errors, but SOTA degraded with `no applied evidence available; using full evidence set`; Brave/Tavily filtered off-topic items under strict topic.
+- Cost: total `0.184773` (`sonnet=0.184773`, `kimi=0`, `glm_max=0`); latency was high because Kimi/GLM opencode-go attempts fell back.
+- Key findings for benchmark direction:
+  - SWR-Bench/SWRench-style design supports balanced clean/defect PRs and point-level TP/FP/FN scoring, but the evidence set does not quantify adversarial false-positive traps or synthetic injection robustness.
+  - Actionability of minimal fix plans is an evidence gap; SWR-style `resolve_info` suggests a measurable target, but no source here proves it.
+  - Cost-aware model selection is supported as a one-shot aggregate tradeoff; token-aware/adaptive routing is not supported by the evidence.
+  - Judge variance is named as an open issue, not measured; any harness benchmark should include cheap repeat/noise checks before trusting deltas.
+  - The empirical floor from SWR-style code review is low, so benchmark gates should emphasize absolute recall/precision and false positives, not roadmap optimism.
+- Next selected follow-up: benchmark v1.0.5 C patch adding static scorer-case fixtures for trap/actionability calibration so the benchmark verifies its own scoring channels without spending provider tokens or relying on live model randomness.
+
+
+### Benchmark Version 1.0.5 Notes
+
+- Follow-up from SOTA normal artifact `/home/sina/.advisor/sessions/20260710T125529-sota` and stable v1.0.4 review artifact `/home/sina/.advisor/sessions/20260710T104008-review`.
+- Patch: add provider-free static `scorer_cases` to benchmark manifest and runner. These calibrate false-positive trap positive hits, negated trap non-hits, and minimal-fix actionability missing verification/test requirements.
+- Scope: C benchmark measurement only; no advisor CLI/skills/context behavior changed.
+- Rationale: live minimax runs had `false_positive_hits=[]`, so the scorer channel existed but had no positive benchmark self-test; SOTA also confirmed adversarial FP traps/actionability are evidence gaps worth measuring locally.
+- Gates before scoring: initial full gate had `pytest` PASS (`146 passed, 22 subtests`) and `ruff` PASS; first smoke command path was invalid (`scripts/smoke_adv_tools.py` missing), corrected to `python3 adv-tools/scripts/smoke_adv_tools.py --adversarial --no-gate --advisor-py advisor/advisor.py`, which PASSed (`20 checks / 10 features`).
+- Static scorer calibration: all 3 new scorer cases PASS; observed trap-positive penalty `0.30`, negated trap penalty `0.0`, missing-test actionability `0.466667`.
+- Requires rebaseline: yes. Do not compare v1.0.4 and v1.0.5 without this note.
+
+
+### Benchmark Version 1.0.5 Cheap Run
+
+- Cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T113022Z-v1.0.5-cheap-minimax`; score `88.207498`; axes quality `33.207498/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.024420`; latency total `222.001s`.
+- Advisor artifact paths: quality cases under `/home/sina/advisor-dev/benchmarks/results/20260710T113022Z-v1.0.5-cheap-minimax/advisor-artifacts/`; internal benchmark artifact `/home/sina/advisor-dev/benchmarks/results/20260710T113022Z-v1.0.5-cheap-minimax/advisor-artifacts/20260710T133404-benchmark`.
+- Status: no `needs_human`; all SOTA, infra, and scorer calibration cases PASS.
+- Observed live trap hits: all live quality cases still `false_positive_hits=[]`; positive-hit coverage now comes from provider-free scorer cases, not from minimax output randomness.
+- Interpretation: score movement versus v1.0.4 cheap (`89.127136`) is not directly comparable because benchmark version changed and minimax output variance is present; scorer additions are green and did not consume provider tokens.

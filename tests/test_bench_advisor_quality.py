@@ -134,3 +134,10 @@ def test_manifest_false_positive_traps_have_known_routes() -> None:
     assert traps
     unrouted = sorted(trap for trap in traps if bench.false_positive_trap_route(trap) is None)
     assert unrouted == []
+
+
+def test_static_scorer_cases_pass() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    rows = [bench.score_scorer_case(case) for case in manifest.get("scorer_cases", [])]
+    assert rows
+    assert {row["status"] for row in rows} == {"pass"}
