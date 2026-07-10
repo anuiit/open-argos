@@ -52,6 +52,13 @@
 | 3.2 | `advisor @review ... --file <BENCHLOG/code/results> --json` | `/home/sina/.advisor/sessions/20260710T180853-review` | Partial stable review: Sonnet+MiniMax ok, Kimi hung on opencode-go and run was interrupted after practical timeout; no `needs_human` in normalized outputs. |
 | 3.2 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T162438Z-v1.0.7-cheap-minimax` | Tuned advisor prompt/contract cheap run after removing hard caps. |
 | 3.2 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax` | Tuned advisor prompt/contract full run; no validated improvement, patch reverted. |
+| 3.C4 | `pytest -q && ruff check . && smoke --adversarial` | N/A | PASS for v1.0.8 benchmark patch; 149 tests + 22 subtests, ruff clean, 20/10 smoke checks. |
+| 3.C4 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T164120Z-v1.0.8-cheap-minimax` | v1.0.8 cheap rebaseline; real full-count 0. |
+| 3.C4 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T164502Z-v1.0.8-full-minimax` | v1.0.8 full rebaseline; real full-count 1. |
+| 3.C5 | `advisor @review --advisor sonnet --single-ok ... --json` | `/home/sina/.advisor/sessions/20260710T185202-review` | Stable targeted review: keep v1.0.8 concept, but add static scorer controls for 3+ real anchors before relying on it. |
+| 3.C5 | `pytest -q && ruff check . && smoke --adversarial` | N/A | PASS for v1.0.9 scorer-control patch; 149 tests + 22 subtests, ruff clean, 20/10 smoke checks. |
+| 3.C5 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T165441Z-v1.0.9-cheap-minimax` | v1.0.9 cheap rebaseline; scorer anchor controls pass. |
+| 3.C5 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T165812Z-v1.0.9-full-minimax` | v1.0.9 full rebaseline; scorer anchor controls pass, prompt-injection live miss observed. |
 
 ## SOTA Questions
 | Run | Question | Reason | Sources quality summary |
@@ -67,6 +74,8 @@
 | 1.0.2 | Yes | Scorer bugfix C: standalone none markers only count as empty; bullets containing words like `None`/`aucun` are now counted. | Yes; rebaseline required before comparing with v1.0.2. |
 | 1.0.3 | Yes | Scorer adds conservative `false_positive_traps` penalty while preserving existing precision formula. | Yes; rebaseline required before comparing with v1.0.3. |
 | 1.0.4 | Yes | Scorer calibrates `false_positive_traps` negation handling and covers dependency/rewrite/repo-access trap paths. | Yes; rebaseline required before comparing with v1.0.4. |
+| 1.0.8 | Yes | Adds case-specific real-case actionability anchors so structured concrete plans alone no longer saturate real-case scoring. | Yes; v1.0.8 rebaseline done. Do not compare v1.0.7 and v1.0.8 without note. |
+| 1.0.9 | Yes | Adds static scorer controls for case-specific real-actionability anchors introduced in v1.0.8. | Yes; v1.0.9 rebaseline done. Do not compare v1.0.8 and v1.0.9 without note. |
 
 ## Runs
 | Iteration | Benchmark version | advisor-dev commit | Score (axes 1-4) | Cost | Latency | Notes |
@@ -89,6 +98,10 @@
 | Iteration 2 advisor-contract full | 1.0.7 | uncommitted | 94.023076 (39.023076/20/25/10) | 0.046687 | 442.418s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T155906Z-v1.0.7-full-minimax`; delta vs v1.0.7 full rebaseline `+1.429124`, cost `-0.004230`, latency `-20.824s`; caveat: real-case saturation, injected actionability worsened. |
 | Iteration 2 tuned advisor-contract cheap | 1.0.7 | uncommitted/reverted | 94.435003 (39.435003/20/25/10) | 0.031985 | 241.421s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T162438Z-v1.0.7-cheap-minimax`; better than as-is cheap but below v1.0.7 cheap baseline. |
 | Iteration 2 tuned advisor-contract full | 1.0.7 | uncommitted/reverted | 92.599719 (37.599719/20/25/10) | 0.062666 | 582.013s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax`; delta vs v1.0.7 full baseline `+0.005767` only, cost/latency worse, injected quality down; patch reverted. |
+| Benchmark calibration cheap | 1.0.8 | uncommitted | 92.276497 (37.276497/20/25/10) | 0.024679 | 216.619s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T164120Z-v1.0.8-cheap-minimax`; real actionability full-count `0`, no `needs_human`. |
+| Benchmark calibration full | 1.0.8 | uncommitted | 92.788089 (37.788089/20/25/10) | 0.043440 | 369.207s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T164502Z-v1.0.8-full-minimax`; real actionability full-count `1`, no `needs_human`; benchmark semantic change, not comparable to v1.0.7. |
+| Benchmark scorer-control cheap | 1.0.9 | uncommitted | 91.587151 (36.587151/20/25/10) | 0.021080 | 190.689s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T165441Z-v1.0.9-cheap-minimax`; scorer anchor controls pass, no `needs_human`. |
+| Benchmark scorer-control full | 1.0.9 | uncommitted | 91.093171 (36.093171/20/25/10) | 0.049984 | 506.486s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T165812Z-v1.0.9-full-minimax`; scorer anchor controls pass; live injected prompt-injection recall miss lowered score. |
 
 ## Decisions
 | Decision | Reason | Evidence | Date |
@@ -101,6 +114,7 @@
 | User selected benchmark/scorer C next. | Resolved prior human choice by selecting option 1. | User reply `1`; v1.0.2 scorer patch commit `9f98f4d`. | 2026-07-09 |
 | Stop before metric redesign. | Stable review says precision semantics and false-positive-trap scoring are methodology/product decisions requiring explicit human answer before further scorer patching. | `/home/sina/.advisor/sessions/20260709T231845-review`; Sonnet Blockers and Kimi Minimal fix plan. | 2026-07-09 |
 | Rejected/reverted advisor output-contract patch. | Stable review and tuned full run showed no robust advisor performance improvement: initial gain was real-case saturation; tuned full delta was only `+0.005767` with worse cost/latency and lower injected quality. | Stable partial review `/home/sina/.advisor/sessions/20260710T180853-review`; tuned full `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax`; product files reverted, BENCHLOG retained. | 2026-07-10 |
+| Accepted benchmark real-anchor calibration, not advisor product prompt change. | v1.0.9 fixes the stable-review blocker by adding static scorer controls for case-specific real actionability anchors; product A/B prompt patch remains reverted. | Stable review `/home/sina/.advisor/sessions/20260710T185202-review`; v1.0.9 cheap/full artifacts `/home/sina/advisor-dev/benchmarks/results/20260710T165441Z-v1.0.9-cheap-minimax`, `/home/sina/advisor-dev/benchmarks/results/20260710T165812Z-v1.0.9-full-minimax`. | 2026-07-10 |
 
 ## Open Questions
 | Question | Blocking? | Needs SOTA? | Needs human? |
@@ -446,3 +460,27 @@ Reason for run 2:
 - Tuned full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T162847Z-v1.0.7-full-minimax`; score `92.599719`; axes `37.599719/20/25/10`; cost `0.062666`; latency `582.013s`; no `needs_human`.
 - Comparable v1.0.7 full baseline: `/home/sina/advisor-dev/benchmarks/results/20260710T123236Z-v1.0.7-full-minimax`; score `92.593952`; cost `0.050917`; latency `463.242s`; injected quality `0.791622`; injected actionability `0.795833`.
 - Final decision for this A/B experiment: revert product code. Tuned full delta is only `+0.005767`, with cost `+0.011749`, latency `+118.771s`, real-case saturation still `5`, and injected quality lower (`0.732768` in tuned full diagnostics). This is not a validated advisor performance improvement.
+
+
+### Benchmark Version 1.0.8 Notes
+
+- Follow-up from rejected A/B prompt experiment and partial stable review artifact `/home/sina/.advisor/sessions/20260710T180853-review`.
+- Defect C: real-case actionability in v1.0.7 could saturate from structure alone (`structured_fix_steps` + `concrete_fix_target`), making prompt wording look better without improving injected-defect quality.
+- Patch: add case-specific real-case actionability anchors in `benchmarks/golden/v1/manifest.json` for `.env`, OpenAI client, vision, validator/schema, tests, and ping-specific smoke context; add regression `test_real_cases_have_case_specific_actionability_anchors`.
+- No-model rescore before spending providers: v1.0.7 baseline full real-actionability full-count would drop from `2` to `1`; rejected as-is prompt full from `5` to `3`; tuned prompt full from `5` to `4`, so the benchmark is less vulnerable to pure structure saturation.
+- Gates before rebaseline: `pytest -q` PASS (`149 passed, 22 subtests`), `ruff check .` PASS, adversarial smoke PASS (`20 checks / 10 features`).
+- Cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T164120Z-v1.0.8-cheap-minimax`; score `92.276497`; real quality `0.9055`; real actionability mean `0.79`; real full-count `0`; no `needs_human`.
+- Full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T164502Z-v1.0.8-full-minimax`; score `92.788089`; axes `37.788089/20/25/10`; cost `0.043440`; latency `369.207s`; real quality `0.91105`; real actionability mean `0.802333`; real full-count `1`; injected quality `0.795164`; no `needs_human`.
+- Interpretation: v1.0.8 is a benchmark semantic calibration and requires rebaseline. It improves measurement robustness by reducing real-case ceiling effects while preserving injected-case scoring around v1.0.7 levels.
+
+
+### Benchmark Version 1.0.9 Notes
+
+- Follow-up from targeted stable review artifact `/home/sina/.advisor/sessions/20260710T185202-review` (`advisor @review --advisor sonnet --single-ok`). Review status `ok`, no `needs_human`; cost `0.543888`.
+- Review recommendation: keep the v1.0.8 benchmark concept but add static scorer controls for real cases with 3+ actionability anchors before relying on it for future A/B prompt comparisons.
+- Patch: add scorer fixtures `real-actionability-anchors-missing.md` and `real-actionability-anchors-specific.md`; add manifest scorer cases `scorer-real-actionability-anchors-missing-005` and `scorer-real-actionability-anchors-specific-006`.
+- Static controls: missing-anchor plan observes `actionability=0.58`, `score=0.811`; specific-anchor plan observes `actionability=1.0`, `score=1.0`; both PASS.
+- Gates before rebaseline: `pytest -q` PASS (`149 passed, 22 subtests`), `ruff check .` PASS, adversarial smoke PASS (`20 checks / 10 features`).
+- Cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T165441Z-v1.0.9-cheap-minimax`; score `91.587151`; real actionability mean `0.65`; real full-count `0`; scorer anchor controls PASS; no `needs_human`.
+- Full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T165812Z-v1.0.9-full-minimax`; score `91.093171`; axes `36.093171/20/25/10`; cost `0.049984`; latency `506.486s`; real actionability mean `0.862333`; real full-count `1`; scorer anchor controls PASS; no `needs_human`.
+- Interpretation: v1.0.9 is the current benchmark baseline. The lower full score is dominated by a live miss on `injected-prompt-injection-007` (`recall=0`, `score=0.31`) and should be treated as model-output variance plus stricter benchmark measurement, not a product regression.

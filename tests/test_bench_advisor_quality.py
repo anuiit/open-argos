@@ -143,6 +143,16 @@ def test_static_scorer_cases_pass() -> None:
     assert {row["status"] for row in rows} == {"pass"}
 
 
+def test_real_cases_have_case_specific_actionability_anchors() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    generic = {"structured_fix_steps", "concrete_fix_target"}
+    real_cases = [case for case in manifest["cases"] if case.get("kind") == "real"]
+    assert real_cases
+    for case in real_cases:
+        requirements = set(case.get("minimal_fix_requirements", []))
+        assert requirements - generic, case["case_id"]
+
+
 def test_real_case_actionability_discriminates_structured_concrete_fix_plan() -> None:
     case = {
         "case_id": "real-actionability",

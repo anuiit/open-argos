@@ -1,5 +1,5 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.9",
   "created_at": "2026-07-09",
   "judge_config": "benchmarks/frozen/judge-v1.json",
   "cases": [
@@ -12,7 +12,10 @@
       "known_defects": [],
       "minimal_fix_requirements": [
         "structured_fix_steps",
-        "concrete_fix_target"
+        "concrete_fix_target",
+        "openai_client.py",
+        "vision_context.py",
+        "tests/test_m2_2d_policy.py"
       ],
       "false_positive_traps": [
         "do not claim access to omitted repository files",
@@ -28,7 +31,9 @@
       "known_defects": [],
       "minimal_fix_requirements": [
         "structured_fix_steps",
-        "concrete_fix_target"
+        "concrete_fix_target",
+        ".env",
+        ".env.example"
       ],
       "false_positive_traps": [
         "do not claim access to omitted repository files",
@@ -44,7 +49,10 @@
       "known_defects": [],
       "minimal_fix_requirements": [
         "structured_fix_steps",
-        "concrete_fix_target"
+        "concrete_fix_target",
+        "openai_api_key",
+        "vision",
+        "validator"
       ],
       "false_positive_traps": [
         "do not claim access to omitted repository files",
@@ -60,7 +68,10 @@
       "known_defects": [],
       "minimal_fix_requirements": [
         "structured_fix_steps",
-        "concrete_fix_target"
+        "concrete_fix_target",
+        "vision",
+        "validator",
+        "schema"
       ],
       "false_positive_traps": [
         "do not claim access to omitted repository files",
@@ -76,7 +87,8 @@
       "known_defects": [],
       "minimal_fix_requirements": [
         "structured_fix_steps",
-        "concrete_fix_target"
+        "concrete_fix_target",
+        "ping"
       ],
       "false_positive_traps": [
         "do not claim access to omitted repository files",
@@ -343,7 +355,7 @@
       "expected_status": "pass"
     }
   ],
-  "version_reason": "Tightens concrete real-case actionability target matching, adds weak saturation scorer control, and exposes axis1 diagnostics. Requires re-baseline.",
+  "version_reason": "Adds static scorer controls for case-specific real-actionability anchors introduced in v1.0.8. Requires re-baseline.",
   "scorer_cases": [
     {
       "case_id": "scorer-trap-positive-001",
@@ -493,6 +505,63 @@
         "max": {
           "actionability": 0.35,
           "score": 0.71
+        }
+      }
+    },
+    {
+      "case_id": "scorer-real-actionability-anchors-missing-005",
+      "path": "benchmarks/golden/v1/cases/scorer/real-actionability-anchors-missing.md",
+      "quality_case": {
+        "kind": "real",
+        "mode": "review",
+        "known_defects": [],
+        "minimal_fix_requirements": [
+          "structured_fix_steps",
+          "concrete_fix_target",
+          "openai_client.py",
+          "vision_context.py",
+          "tests/test_m2_2d_policy.py"
+        ],
+        "false_positive_traps": []
+      },
+      "expected": {
+        "equals": {
+          "false_positive_hits": [],
+          "false_positive_penalty": 0.0
+        },
+        "min": {
+          "actionability": 0.58
+        },
+        "max": {
+          "actionability": 0.58,
+          "score": 0.82
+        }
+      }
+    },
+    {
+      "case_id": "scorer-real-actionability-anchors-specific-006",
+      "path": "benchmarks/golden/v1/cases/scorer/real-actionability-anchors-specific.md",
+      "quality_case": {
+        "kind": "real",
+        "mode": "review",
+        "known_defects": [],
+        "minimal_fix_requirements": [
+          "structured_fix_steps",
+          "concrete_fix_target",
+          "openai_client.py",
+          "vision_context.py",
+          "tests/test_m2_2d_policy.py"
+        ],
+        "false_positive_traps": []
+      },
+      "expected": {
+        "equals": {
+          "false_positive_hits": [],
+          "false_positive_penalty": 0.0
+        },
+        "min": {
+          "actionability": 0.99,
+          "score": 0.99
         }
       }
     }
