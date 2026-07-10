@@ -40,6 +40,9 @@
 | 3.C | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T211239Z-v1.0.2-cheap-minimax` | Cheap noise run 2. |
 | 3.C | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260709T211442Z-v1.0.2-cheap-minimax` | Cheap noise run 3. |
 | 3.C | `advisor @review ... --file <BENCHLOG/scorer/tests/manifest/results> --json` | `/home/sina/.advisor/sessions/20260709T231845-review` | Stable review: v1.0.2 fix valid; next metric redesign needs human decision. |
+| 3.C2 | `scripts/bench_advisor_quality.py --profile cheap --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T074935Z-v1.0.3-cheap-minimax` | v1.0.3 cheap score; no false-positive trap hits in this sample. |
+| 3.C2 | `scripts/bench_advisor_quality.py --profile full --advisor minimax --json` | `/home/sina/advisor-dev/benchmarks/results/20260710T075258Z-v1.0.3-full-minimax` | v1.0.3 full score; no false-positive trap hits in this sample. |
+| 3.C2 | `advisor @review ... --file <BENCHLOG/scorer/tests/manifest/results> --json` | `/home/sina/.advisor/sessions/20260710T100335-review` | Stable review: no blockers; next issues are C benchmark calibration/tests/full-noise. |
 
 ## SOTA Questions
 | Run | Question | Reason | Sources quality summary |
@@ -68,6 +71,8 @@
 | Benchmark fix noise cheap #1 | 1.0.2 | `9f98f4d` | 88.804279 (33.804279/20/25/10) | 0.021340 | 149.202s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T210958Z-v1.0.2-cheap-minimax`. |
 | Benchmark fix noise cheap #2 | 1.0.2 | `9f98f4d` | 88.367509 (33.367509/20/25/10) | 0.014134 | 118.040s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T211239Z-v1.0.2-cheap-minimax`. |
 | Benchmark fix noise cheap #3 | 1.0.2 | `9f98f4d` | 88.527142 (33.527142/20/25/10) | 0.022025 | 190.830s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260709T211442Z-v1.0.2-cheap-minimax`. |
+| False-positive trap cheap | 1.0.3 | `fdda965` | 88.644997 (33.644997/20/25/10) | 0.023650 | 197.890s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T074935Z-v1.0.3-cheap-minimax`; all `false_positive_hits=[]`. |
+| False-positive trap full | 1.0.3 | `fdda965` | 88.859475 (33.859475/20/25/10) | 0.055155 | 604.495s | Artifact `/home/sina/advisor-dev/benchmarks/results/20260710T075258Z-v1.0.3-full-minimax`; all `false_positive_hits=[]`; not comparable to v1.0.2 without version note. |
 
 ## Decisions
 | Decision | Reason | Evidence | Date |
@@ -228,3 +233,24 @@ Reason for run 2:
 - Tests added/updated in `tests/test_bench_advisor_quality.py` for negated dependency guidance, positive dependency false positive, and penalty cap.
 - Gates before rebaseline: `pytest` PASS (`140 passed, 22 subtests`), `ruff` PASS, `smoke --adversarial --no-gate` PASS (`20 checks / 10 features`).
 - Requires rebaseline: yes. Do not compare v1.0.2 and v1.0.3 scores without this note.
+
+
+### Benchmark Version 1.0.3 Rebaseline
+
+- Cheap artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T074935Z-v1.0.3-cheap-minimax`; score `88.644997`; axes quality `33.644997/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.023650`; latency total `197.890s`.
+- Full artifact: `/home/sina/advisor-dev/benchmarks/results/20260710T075258Z-v1.0.3-full-minimax`; score `88.859475`; axes quality `33.859475/45`, SOTA `20/20`, infra `25/25`, cost/latency `10/10`; cost total `0.055155`; latency total `604.495s`.
+- Observed trap hits: all quality cases had `false_positive_hits=[]`; v1.0.3 therefore adds the measurement channel without penalizing this minimax sample.
+- Interpretation: v1.0.3 is a benchmark semantic change and not directly comparable to v1.0.2. The lower full score vs v1.0.2 (`89.667993`) appears dominated by normal model output variance/actionability differences rather than trap penalties.
+
+
+### Stable Review After v1.0.3 Trap Scoring
+
+- Stable review artifact: `/home/sina/.advisor/sessions/20260710T100335-review`; command used stable `/home/sina/.local/bin/advisor @review` with BENCHLOG, scorer, tests, manifest, and v1.0.3 cheap/full reports.
+- Review status: all advisors returned `status=ok`; no CLI `needs_human` status.
+- Stable review consensus:
+  - Blockers: none.
+  - v1.0.3 patch is mechanically valid and preserves existing precision formula.
+  - Remaining A: none evidenced.
+  - Remaining B: none evidenced.
+  - Remaining C: trap tests are asymmetric (dependency only), `not add a dependency` negation is not covered, trap dispatch is brittle to manifest wording, and full-profile noise remains unmeasured.
+- Next selected follow-up: minimal C patch for trap regex/test coverage before any broader data-driven trap refactor or full-noise campaign.
