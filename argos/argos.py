@@ -39,7 +39,7 @@ from pathlib import Path
 from pathlib import PureWindowsPath
 from typing import Any
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 IS_WINDOWS = os.name == "nt"
 # signal.SIGKILL is POSIX-only; on Windows terminate_process_group() routes to
 # _windows_kill_tree() and ignores the signal, so any sentinel value is safe.
@@ -4017,6 +4017,26 @@ def write_default_config(path: Path) -> None:
     print(path)
 
 
+def windows_runtime_marker_path(cfg_path: Path) -> Path:
+    """Evidence file recording the first successful native-Windows live run."""
+    return cfg_path.parent / ".native-windows-validated.json"
+
+
+def mark_windows_runtime_validated(cfg_path: Path) -> None:
+    """Persist the native-Windows runtime validation marker after a live run.
+
+    No-op unless IS_WINDOWS, and no-op if the marker already exists. Any write
+    error is suppressed: recording evidence must never fail a real run.
+    """
+    if not IS_WINDOWS:
+        return
+    marker = windows_runtime_marker_path(cfg_path)
+    if marker.exists():
+        return
+    with contextlib.suppress(Exception):
+        atomic_write_text(marker, json.dumps({"validated_at": utc_now(), "version": VERSION}, ensure_ascii=False, indent=2) + "\n")
+
+
 def doctor(cfg_path: Path) -> int:
     load_config(cfg_path)
     tools = {"opencode": shutil.which("opencode"), "claude": shutil.which("claude"), "agy": shutil.which("agy"), "codex": shutil.which("codex"), "ollama": shutil.which("ollama")}
@@ -4024,8 +4044,20 @@ def doctor(cfg_path: Path) -> int:
     agy_vision_available = bool(tools["agy"])
     native_windows = IS_WINDOWS or sys.platform == "win32"
     process_snapshot = "procfs" if Path("/proc").exists() else "limited"
-    platform_supported = not native_windows
-    runtime_validated = not native_windows
+    marker_path = windows_runtime_marker_path(cfg_path) if native_windows else None
+    marker_present = bool(marker_path and marker_path.exists())
+    platform_supported = True
+    runtime_validated = (not native_windows) or marker_present
+    if native_windows:
+        if marker_present:
+            validation = "native Windows runtime validated by a successful live run"
+            note = "Native Windows process-tree control is supported and confirmed by a real run on this host."
+        else:
+            validation = "native Windows parity implemented (process-tree kill via taskkill); awaiting first successful live run on this host"
+            note = "run any live argos command successfully once on this host to mark the runtime as validated."
+    else:
+        validation = "verified on POSIX/WSL-style environments"
+        note = "POSIX/WSL-style environment supported."
     print(json.dumps({
         "version": VERSION,
         "config": str(cfg_path),
@@ -4036,9 +4068,10 @@ def doctor(cfg_path: Path) -> int:
             "supported": platform_supported,
             "shims_available": native_windows,
             "runtime_validated": runtime_validated,
+            "runtime_validation_marker": str(marker_path) if marker_path else None,
             "process_snapshot": process_snapshot,
-            "validation": "native Windows shims exist but are not runtime-verified from this host" if native_windows else "verified on POSIX/WSL-style environments",
-            "note": "Native Windows compatibility shims are available for core commands; treat as experimental until a real Windows run passes." if native_windows else "POSIX/WSL-style environment supported.",
+            "validation": validation,
+            "note": note,
         },
         "tools": tools,
         "readiness": {
@@ -4402,13 +4435,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "run":
         if args.background:
             return background_run_mode(args)
-        return asyncio.run(run_mode(args))
+        rc = asyncio.run(run_mode(args))
+        if rc == 0:
+            mark_windows_runtime_validated(Path(args.config).expanduser())
+        return rc
     if args.cmd == "start":
         return asyncio.run(start_mode(args))
     if args.cmd == "ask":
-        return asyncio.run(ask_mode(args))
+        rc = asyncio.run(ask_mode(args))
+        if rc == 0:
+            mark_windows_runtime_validated(Path(args.config).expanduser())
+        return rc
     if args.cmd == "multi":
-        return asyncio.run(multi_mode(args))
+        rc = asyncio.run(multi_mode(args))
+        if rc == 0:
+            mark_windows_runtime_validated(Path(args.config).expanduser())
+        return rc
     if args.cmd == "sessions":
         return list_sessions(Path(args.artifact_root).expanduser(), args.json)
     if args.cmd == "runs":

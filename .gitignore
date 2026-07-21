@@ -1,5 +1,6 @@
 .argos/
 .config/argos-dev/.env
+.native-windows-validated.json
 __pycache__/
 *.pyc
 .pytest_cache/

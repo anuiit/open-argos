@@ -95,6 +95,7 @@ if [ "$DO_MIRROR" = "1" ]; then
     # mis à jour via git pull ; ce rsync n'aligne que l'arbre de travail.
     rsync -a --delete \
       --exclude '.git/' \
+      --exclude '.native-windows-validated.json' \
       --exclude '.argos/' \
       --exclude '.omc/' \
       --exclude '.pytest_cache/' \

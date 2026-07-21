@@ -728,11 +728,90 @@ class SafetyAndSessionTests(unittest.TestCase):
                 rc = argos.doctor(cfg)
             payload = json.loads(out.getvalue())
         self.assertEqual(rc, 0)
-        self.assertFalse(payload["platform"]["supported"])
+        self.assertTrue(payload["platform"]["supported"])
         self.assertTrue(payload["platform"]["native_windows"])
         self.assertTrue(payload["platform"]["shims_available"])
         self.assertFalse(payload["platform"]["runtime_validated"])
         self.assertEqual(payload["platform"]["process_snapshot"], "limited")
+
+    def test_doctor_native_windows_without_marker_is_supported_but_unvalidated(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "config.json"
+            out = io.StringIO()
+            with (
+                mock.patch.object(argos, "IS_WINDOWS", True),
+                mock.patch.object(argos.sys, "platform", "win32"),
+                mock.patch.object(argos.shutil, "which", return_value="/bin/tool"),
+                mock.patch.object(argos.platform, "system", return_value="Windows"),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = argos.doctor(cfg)
+            payload = json.loads(out.getvalue())
+        self.assertEqual(rc, 0)
+        self.assertTrue(payload["platform"]["supported"])
+        self.assertFalse(payload["platform"]["runtime_validated"])
+        self.assertIsNotNone(payload["platform"]["runtime_validation_marker"])
+
+    def test_doctor_native_windows_with_marker_is_runtime_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "config.json"
+            marker = argos.windows_runtime_marker_path(cfg)
+            marker.write_text(json.dumps({"validated_at": "x", "version": argos.VERSION}), encoding="utf-8")
+            out = io.StringIO()
+            with (
+                mock.patch.object(argos, "IS_WINDOWS", True),
+                mock.patch.object(argos.sys, "platform", "win32"),
+                mock.patch.object(argos.shutil, "which", return_value="/bin/tool"),
+                mock.patch.object(argos.platform, "system", return_value="Windows"),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = argos.doctor(cfg)
+            payload = json.loads(out.getvalue())
+        self.assertEqual(rc, 0)
+        self.assertTrue(payload["platform"]["supported"])
+        self.assertTrue(payload["platform"]["runtime_validated"])
+        self.assertEqual(payload["platform"]["runtime_validation_marker"], str(marker))
+
+    def test_doctor_posix_is_supported_and_runtime_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "config.json"
+            out = io.StringIO()
+            with (
+                mock.patch.object(argos, "IS_WINDOWS", False),
+                mock.patch.object(argos.sys, "platform", "linux"),
+                mock.patch.object(argos.shutil, "which", return_value="/bin/tool"),
+                mock.patch.object(argos.platform, "system", return_value="Linux"),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = argos.doctor(cfg)
+            payload = json.loads(out.getvalue())
+        self.assertEqual(rc, 0)
+        self.assertFalse(payload["platform"]["native_windows"])
+        self.assertTrue(payload["platform"]["supported"])
+        self.assertTrue(payload["platform"]["runtime_validated"])
+        self.assertIsNone(payload["platform"]["runtime_validation_marker"])
+
+    def test_mark_windows_runtime_validated_writes_json_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "config.json"
+            marker = argos.windows_runtime_marker_path(cfg)
+            self.assertEqual(marker.name, ".native-windows-validated.json")
+            with mock.patch.object(argos, "IS_WINDOWS", True):
+                argos.mark_windows_runtime_validated(cfg)
+                self.assertTrue(marker.exists())
+                payload = json.loads(marker.read_text(encoding="utf-8"))
+                self.assertEqual(payload["version"], argos.VERSION)
+                self.assertIn("validated_at", payload)
+                # No-op when already present: content must not change.
+                marker.write_text(json.dumps({"validated_at": "sentinel", "version": "sentinel"}), encoding="utf-8")
+                argos.mark_windows_runtime_validated(cfg)
+                self.assertEqual(json.loads(marker.read_text(encoding="utf-8"))["validated_at"], "sentinel")
+            # POSIX path is a no-op even without an existing marker.
+            cfg2 = Path(td) / "posix" / "config.json"
+            cfg2.parent.mkdir(parents=True, exist_ok=True)
+            with mock.patch.object(argos, "IS_WINDOWS", False):
+                argos.mark_windows_runtime_validated(cfg2)
+            self.assertFalse(argos.windows_runtime_marker_path(cfg2).exists())
 
     def test_safe_session_id_matches_session_dir_validator(self) -> None:
         sid = argos.safe_session_id()
