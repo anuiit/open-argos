@@ -89,7 +89,12 @@ if [ "$DO_MIRROR" = "1" ]; then
   echo "== miroir Windows: $MIRROR_DEST =="
   if [ -d /mnt/f/dev ]; then
     mkdir -p "$MIRROR_DEST"
+    # .git est EXCLU : rsync ne peut pas remplacer les objets git en lecture seule
+    # sur NTFS/drvfs (Permission denied). Le repo git côté Windows doit être un
+    # vrai clone : git clone https://github.com/anuiit/open-argos.git (une fois),
+    # mis à jour via git pull ; ce rsync n'aligne que l'arbre de travail.
     rsync -a --delete \
+      --exclude '.git/' \
       --exclude '.argos/' \
       --exclude '.omc/' \
       --exclude '.pytest_cache/' \
@@ -97,7 +102,7 @@ if [ "$DO_MIRROR" = "1" ]; then
       --exclude '__pycache__/' \
       --exclude 'benchmarks/results/' \
       ./ "$MIRROR_DEST"/
-    echo "Miroir synchronisé (.git inclus -> repo complet utilisable côté Windows)."
+    echo "Miroir synchronisé (arbre de travail, .git exclu)."
     echo "Côté Windows : F:\\dev\\open-argos\\bin\\argos-dev.cmd (ou .ps1) — nécessite Python 3 dans le PATH."
   else
     echo "ATTENTION: /mnt/f/dev introuvable — monte F: ou relance avec --no-mirror." >&2

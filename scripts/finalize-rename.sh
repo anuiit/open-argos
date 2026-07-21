@@ -59,6 +59,8 @@ fi
 
 # 2) Commit + push
 echo "== commit + push =="
+# restaure les bits exécutables perdus par les éditions côté Windows
+chmod +x argos/argos.py bin/argos-dev bin/argos-dev.ps1 scripts/*.sh scripts/bench_argos_quality.py argos-tools/scripts/*.py 2>/dev/null || true
 git add -A
 if git diff --cached --quiet; then
   echo "rien à committer."
