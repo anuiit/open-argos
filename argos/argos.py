@@ -39,7 +39,7 @@ from pathlib import Path
 from pathlib import PureWindowsPath
 from typing import Any
 
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 IS_WINDOWS = os.name == "nt"
 # signal.SIGKILL is POSIX-only; on Windows terminate_process_group() routes to
 # _windows_kill_tree() and ignores the signal, so any sentinel value is safe.
@@ -1118,12 +1118,46 @@ def stdout_looks_like_cli_error(stdout: str) -> bool:
     return bool(re.match(r"^(?:error|exception|traceback|fatal|failed|failure|ineligibletiererror)\b", text, re.I))
 
 
+def extract_json_error_lines(stdout: str, limit: int = 5) -> list[str]:
+    """Extract provider JSONL protocol errors (e.g. opencode {"type":"error",...}) as readable messages."""
+    messages: list[str] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(obj, dict) or obj.get("type") != "error":
+            continue
+        err = obj.get("error") if isinstance(obj.get("error"), dict) else {}
+        data = err.get("data") if isinstance(err.get("data"), dict) else {}
+        name = err.get("name") or obj.get("name")
+        message = data.get("message") or err.get("message") or obj.get("message")
+        text = ": ".join(str(x) for x in (name, message) if x).strip()
+        messages.append(text or json.dumps(obj, ensure_ascii=False)[:300])
+        if len(messages) >= limit:
+            break
+    return messages
+
+
 def classified_error_text(err: str, out: str, content: str, rc: int) -> str:
     parts = [err.strip()] if err.strip() else []
+    if rc != 0 or not content.strip():
+        parts.extend(extract_json_error_lines(out))
     stdout_tail = out[-1000:].strip()
     if rc != 0 and stdout_tail and stdout_looks_like_cli_error(stdout_tail):
         parts.append(stdout_tail)
     return "\n".join(parts).strip()
+
+
+def fallback_empty_error(rc: int, out: str, limit: int = 300) -> str:
+    tail = out.strip()[-limit:].strip()
+    if tail:
+        return f"empty response rc={rc}; stdout tail: {tail}"
+    return f"empty response rc={rc}"
+
 
 def parse_opencode(stdout: str) -> tuple[str, dict[str, Any]]:
     text_parts: list[str] = []
@@ -1308,7 +1342,7 @@ class CrossProcessSlots:
 
 
 class Runner:
-    def __init__(self, cfg: dict[str, Any], artifact_dir: Path):
+    def __init__(self, cfg: dict[str, Any], artifact_dir: Path, provider_cwd: Path | None = None):
         self.cfg = cfg
         c = cfg.get("concurrency", {})
         self.global_sem = asyncio.Semaphore(int(c.get("global", 4)))
@@ -1322,6 +1356,10 @@ class Runner:
         secure_mkdir(artifact_dir)
         secure_mkdir(artifact_dir / "raw")
         secure_mkdir(artifact_dir / "normalized")
+        if provider_cwd is None:
+            provider_cwd = artifact_dir / "provider_cwd"
+            secure_mkdir(provider_cwd)
+        self.provider_cwd = provider_cwd
 
     def stage_vision_images(self, images: list[Path] | None) -> list[Path]:
         return stage_vision_images(self.artifact_dir, images)
@@ -1378,12 +1416,12 @@ class Runner:
                 if kind == "opencode":
                     # File contents are already included by build_prompt(); do not attach them again.
                     cmd, shape = build_opencode_command(candidate, model, provider_session_id)
-                    rc, out, err, dur = await run_subprocess(cmd, timeout, cwd=Path.cwd(), input_text=prompt)
+                    rc, out, err, dur = await run_subprocess(cmd, timeout, cwd=self.provider_cwd, input_text=prompt)
                     raw_path = self.write_raw(argos, provider, out, err)
                     content, meta = parse_opencode(out)
                 elif kind == "claude":
                     cmd, shape = claude_command(candidate, provider_session_id=provider_session_id)
-                    rc, out, err, dur = await run_subprocess(cmd, timeout, cwd=Path.cwd(), input_text=prompt)
+                    rc, out, err, dur = await run_subprocess(cmd, timeout, cwd=self.provider_cwd, input_text=prompt)
                     raw_path = self.write_raw(argos, provider, out, err)
                     try:
                         content, meta = parse_claude(out)
@@ -1408,7 +1446,7 @@ class Runner:
             status = "needs_human"
         else:
             status = "error"
-        error = None if status == "ok" else (err_text or f"empty response rc={rc}")
+        error = None if status == "ok" else (err_text or fallback_empty_error(rc, out))
         result = ArgosResult(
             argos=argos, status=status, provider=provider, model=model, kind=kind, duration_sec=round(dur, 3),
             content=content, cost=meta.get("cost"), tokens=meta.get("tokens"), session_id=meta.get("session_id") or provider_session_id,
@@ -1675,6 +1713,17 @@ def turn_dir_for(sdir: Path, turn: int) -> Path:
     return sdir / "turns" / f"{turn:03d}"
 
 
+def provider_session_cwd(sdir: Path) -> Path:
+    """Stable hermetic cwd for provider CLIs across all turns of an argos session.
+
+    opencode derives its projectID from cwd and claude scopes --resume per project dir:
+    changing cwd between turns of one session breaks provider session resume.
+    """
+    path = sdir / "provider_cwd"
+    secure_mkdir(path)
+    return path
+
+
 def make_session_state(sid: str, mode: str, sdir: Path, cfg: dict[str, Any], argoses: list[str], preset_meta: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "schema_version": SESSION_SCHEMA_VERSION,
@@ -1798,9 +1847,10 @@ async def start_mode(args: argparse.Namespace) -> int:
     atomic_write_text(tdir / "input.md", full_prompt)
     atomic_write_json(sdir / "effective_config.json", cfg)
     sess = make_session_state(sid, mode, sdir, cfg, argoses, preset_meta)
+    sess["provider_cwd"] = str(provider_session_cwd(sdir))
     sess["active_turn"] = {"turn": turn, "pid": os.getpid(), "started_at": utc_now()}
     atomic_write_json(sdir / "session.json", sess)
-    runner = Runner(cfg, tdir)
+    runner = Runner(cfg, tdir, provider_cwd=Path(sess["provider_cwd"]))
     results = await asyncio.gather(*(runner.run_logical(a, full_prompt, files, images) for a in argoses))
     final = render_final(mode, list(results))
     meta = {"version": VERSION, "session_id": sid, "mode": mode, "preset": preset_meta, "personas": personas_metadata(argoses, cfg), "turn": turn, "artifact_dir": str(sdir), "turn_dir": str(tdir), "results": [asdict(r) for r in results]}
@@ -1849,6 +1899,8 @@ async def ask_mode(args: argparse.Namespace) -> int:
             sess.setdefault("events", []).append({"type": "repair", "at": utc_now()})
         atomic_write_json(sdir / "session.json", sess)
     cfg = sess["config_snapshot"]
+    legacy_cwd = sess.get("provider_cwd")
+    pcwd = provider_session_cwd(sdir) if legacy_cwd else Path.cwd()
     mode = sess["mode"]
     enforce_image_mode(mode, images)
     target_argoses = args.argoses or list(sess.get("argoses", {}).keys())
@@ -1858,7 +1910,7 @@ async def ask_mode(args: argparse.Namespace) -> int:
     images = stage_vision_images(tdir, images)
     full_prompt = build_prompt(mode, prompt, files, cfg, images)
     atomic_write_text(tdir / "input.md", full_prompt)
-    runner = Runner(cfg, tdir)
+    runner = Runner(cfg, tdir, provider_cwd=pcwd)
     tasks: list[Any] = []
     results: list[ArgosResult] = []
     for argos in target_argoses:
@@ -1930,6 +1982,7 @@ async def multi_mode(args: argparse.Namespace) -> int:
     images = validated_image_paths(args.image)
     enforce_image_mode(mode, images)
     sess = make_session_state(sid, mode, sdir, cfg, argoses, preset_meta)
+    sess["provider_cwd"] = str(provider_session_cwd(sdir))
     atomic_write_json(sdir / "session.json", sess)
     exit_code = 0
     for idx, prompt in enumerate(prompts, start=1):
@@ -1941,7 +1994,7 @@ async def multi_mode(args: argparse.Namespace) -> int:
             full_prompt = build_prompt(mode, prompt, files, cfg, turn_images)
             atomic_write_text(tdir / "input.md", full_prompt)
             atomic_write_json(sdir / "effective_config.json", cfg)
-            runner = Runner(cfg, tdir)
+            runner = Runner(cfg, tdir, provider_cwd=Path(sess["provider_cwd"]))
             results = await asyncio.gather(*(runner.run_logical(a, full_prompt, files, turn_images) for a in argoses))
             atomic_write_text(tdir / "final.md", render_final(mode, list(results)))
             meta = {"version": VERSION, "session_id": sid, "mode": mode, "preset": preset_meta, "personas": personas_metadata(argoses, cfg), "turn": 1, "artifact_dir": str(sdir), "turn_dir": str(tdir), "results": [asdict(r) for r in results]}

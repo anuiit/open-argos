@@ -333,6 +333,40 @@ class ProviderParsingTests(unittest.TestCase):
         self.assertEqual(content, "visual answer")
         self.assertEqual(meta, {"raw_format": "text"})
 
+    def test_extract_json_error_lines_variants(self) -> None:
+        stdout = "\n".join([
+            "not json at all",
+            json.dumps(["json", "but", "not", "dict"]),
+            json.dumps({"type": "text", "part": {"text": "ignored"}}),
+            json.dumps({"type": "error", "message": "flat message"}),
+            json.dumps({"type": "error", "error": {"message": "nested message"}}),
+            json.dumps({"type": "error", "error": {"name": "UnknownError", "data": {"message": "deep message"}}}),
+        ])
+        messages = argos.extract_json_error_lines(stdout)
+        self.assertEqual(messages, [
+            "flat message",
+            "nested message",
+            "UnknownError: deep message",
+        ])
+
+    def test_extract_json_error_lines_respects_limit(self) -> None:
+        stdout = "\n".join(
+            json.dumps({"type": "error", "message": f"err {i}"}) for i in range(10)
+        )
+        messages = argos.extract_json_error_lines(stdout)
+        self.assertEqual(len(messages), 5)
+        self.assertEqual(messages[0], "err 0")
+        self.assertEqual(messages[-1], "err 4")
+
+    def test_classified_error_text_orders_stderr_then_json_then_tail(self) -> None:
+        out = "\n".join([
+            "some noise",
+            json.dumps({"type": "error", "error": {"data": {"message": "server exploded"}}}),
+        ])
+        text = argos.classified_error_text("stderr boom", out, "", 1)
+        self.assertTrue(text.startswith("stderr boom"))
+        self.assertIn("server exploded", text)
+
     def test_validated_image_paths_rejects_non_image(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "not-image.txt"
@@ -1138,6 +1172,215 @@ class ConversationModeTests(unittest.TestCase):
             payload = json.loads(out.getvalue())
         self.assertEqual(rc, argos.EXIT_OK)
         self.assertEqual(payload["status"], "complete")
+
+
+class ErrorSurfacingTests(unittest.TestCase):
+    OPENCODE_CANDIDATE = {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go"}
+
+    def test_opencode_json_error_line_surfaces_real_message(self) -> None:
+        stdout = json.dumps({
+            "type": "error",
+            "sessionID": "s1",
+            "error": {"name": "UnknownError", "data": {"message": "Unexpected server error (500)"}},
+        })
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, stdout, "", 0.1)):
+            runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
+            result = asyncio.run(runner.run_candidate(
+                "kimi",
+                dict(self.OPENCODE_CANDIDATE),
+                "prompt",
+                [],
+                fallback_from=None,
+            ))
+            self.assertEqual(result.status, "error")
+            self.assertIn("Unexpected server error", result.error or "")
+            self.assertNotEqual(result.error, "empty response rc=1")
+
+    def test_opencode_json_error_auth_becomes_needs_human(self) -> None:
+        stdout = json.dumps({
+            "type": "error",
+            "sessionID": "s1",
+            "error": {"name": "UnknownError", "data": {"message": "401 unauthorized, please log in"}},
+        })
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, stdout, "", 0.1)):
+            runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
+            result = asyncio.run(runner.run_candidate(
+                "kimi",
+                dict(self.OPENCODE_CANDIDATE),
+                "prompt",
+                [],
+                fallback_from=None,
+            ))
+            self.assertEqual(result.status, "needs_human")
+            self.assertEqual(argos.argos_exit_code([result]), argos.EXIT_NEEDS_HUMAN)
+
+    def test_empty_response_error_includes_bounded_stdout_tail(self) -> None:
+        stdout = "x" * 1000 + " final words"
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, stdout, "", 0.1)):
+            runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
+            result = asyncio.run(runner.run_candidate(
+                "kimi",
+                dict(self.OPENCODE_CANDIDATE),
+                "prompt",
+                [],
+                fallback_from=None,
+            ))
+            self.assertEqual(result.status, "error")
+            error = result.error or ""
+            self.assertTrue(error.startswith("empty response rc=1"))
+            self.assertIn("stdout tail:", error)
+            self.assertIn("final words", error)
+            self.assertLess(len(error), 400)
+
+    def test_empty_response_without_stdout_keeps_plain_message(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, "", "", 0.1)):
+            runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
+            result = asyncio.run(runner.run_candidate(
+                "kimi",
+                dict(self.OPENCODE_CANDIDATE),
+                "prompt",
+                [],
+                fallback_from=None,
+            ))
+            self.assertEqual(result.status, "error")
+            self.assertEqual(result.error, "empty response rc=1")
+
+
+class ProviderCwdTests(unittest.TestCase):
+    def _args(self, **overrides):
+        defaults = {
+            "config": "/nonexistent/argos-test-config.json",
+            "mode": "vision",
+            "argoses": None,
+            "single_ok": False,
+            "file": [],
+            "image": [],
+            "prompt": "hello",
+            "artifact_root": None,
+            "json": True,
+            "quiet": False,
+            "synthesize": False,
+            "synthesizer": None,
+        }
+        defaults.update(overrides)
+        return type("Args", (), defaults)()
+
+    def test_run_candidate_uses_hermetic_provider_cwd_for_opencode_and_claude(self) -> None:
+        calls = []
+
+        async def fake_run_subprocess(cmd, timeout, cwd=None, input_text=None):
+            calls.append({"cmd": cmd, "cwd": cwd})
+            return 0, "", "", 0.1
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", side_effect=fake_run_subprocess):
+            root = Path(td)
+            runner = argos.Runner(argos.DEFAULT_CONFIG, root)
+            asyncio.run(runner.run_candidate(
+                "kimi",
+                {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go"},
+                "prompt", [], fallback_from=None,
+            ))
+            asyncio.run(runner.run_candidate(
+                "sonnet",
+                {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude"},
+                "prompt", [], fallback_from=None,
+            ))
+            asyncio.run(runner.run_candidate(
+                "agy_image",
+                {"kind": "agy", "model": "default", "provider": "agy", "command": "agy", "timeout_key": "agy"},
+                "prompt", [], fallback_from=None,
+            ))
+            expected_provider_cwd = root / "provider_cwd"
+            by_kind = {call["cmd"][0]: call["cwd"] for call in calls}
+            self.assertEqual(by_kind["opencode"], expected_provider_cwd)
+            self.assertEqual(by_kind["claude"], expected_provider_cwd)
+            self.assertTrue(expected_provider_cwd.exists())
+            self.assertEqual(by_kind["agy"], root)
+
+    def test_start_mode_records_stable_provider_cwd(self) -> None:
+        async def fake_run_logical(self, name, prompt, files, images=None):
+            return ConversationModeTests.ok_result(name)
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(asyncio.run(argos.start_mode(self._args(artifact_root=td))), argos.EXIT_OK)
+            sid = json.loads(out.getvalue())["session_id"]
+            sdir = Path(td) / sid
+            session = json.loads((sdir / "session.json").read_text())
+            self.assertEqual(session["provider_cwd"], str(sdir / "provider_cwd"))
+            self.assertTrue((sdir / "provider_cwd").exists())
+
+    def test_ask_mode_reuses_session_provider_cwd_across_turns(self) -> None:
+        async def fake_run_logical(self, name, prompt, files, images=None):
+            return ConversationModeTests.ok_result(name)
+
+        async def fake_run_locked(self, name, state, prompt, files, images=None):
+            result = ConversationModeTests.ok_result(name)
+            result.session_id = state["provider_session_id"]
+            result.content = "turn two"
+            return result
+
+        original_runner = argos.Runner
+        captures: list[Any] = []
+
+        def make_runner(cfg, artifact_dir, provider_cwd=None):
+            captures.append(provider_cwd)
+            return original_runner(cfg, artifact_dir, provider_cwd=provider_cwd)
+
+        with tempfile.TemporaryDirectory() as td, \
+            mock.patch.object(argos.Runner, "run_logical", fake_run_logical), \
+            mock.patch.object(argos.Runner, "run_locked", fake_run_locked), \
+            mock.patch.object(argos, "Runner", side_effect=make_runner):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(asyncio.run(argos.start_mode(self._args(artifact_root=td))), argos.EXIT_OK)
+            sid = json.loads(out.getvalue())["session_id"]
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(asyncio.run(argos.ask_mode(self._args(artifact_root=td, session_id=sid, prompt="second turn"))), argos.EXIT_OK)
+            sdir = Path(td) / sid
+
+        expected = sdir / "provider_cwd"
+        self.assertEqual(len(captures), 2)
+        self.assertEqual(captures[0], expected)
+        self.assertEqual(captures[1], expected)
+
+    def test_ask_mode_legacy_session_falls_back_to_process_cwd(self) -> None:
+        async def fake_run_logical(self, name, prompt, files, images=None):
+            return ConversationModeTests.ok_result(name)
+
+        async def fake_run_locked(self, name, state, prompt, files, images=None):
+            result = ConversationModeTests.ok_result(name)
+            result.session_id = state["provider_session_id"]
+            result.content = "turn two"
+            return result
+
+        original_runner = argos.Runner
+        captures: list[Any] = []
+
+        def make_runner(cfg, artifact_dir, provider_cwd=None):
+            captures.append(provider_cwd)
+            return original_runner(cfg, artifact_dir, provider_cwd=provider_cwd)
+
+        with tempfile.TemporaryDirectory() as td:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
+                self.assertEqual(asyncio.run(argos.start_mode(self._args(artifact_root=td))), argos.EXIT_OK)
+            sid = json.loads(out.getvalue())["session_id"]
+            sdir = Path(td) / sid
+            # Simulate a legacy session created before provider_cwd tracking existed.
+            session_path = sdir / "session.json"
+            data = json.loads(session_path.read_text())
+            data.pop("provider_cwd", None)
+            session_path.write_text(json.dumps(data), encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), \
+                mock.patch.object(argos.Runner, "run_locked", fake_run_locked), \
+                mock.patch.object(argos, "Runner", side_effect=make_runner):
+                self.assertEqual(asyncio.run(argos.ask_mode(self._args(artifact_root=td, session_id=sid, prompt="second turn"))), argos.EXIT_OK)
+
+        self.assertEqual(captures, [Path.cwd()])
 
 
 class SotaExplorerTests(unittest.TestCase):
