@@ -39,7 +39,7 @@ from pathlib import Path
 from pathlib import PureWindowsPath
 from typing import Any
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 IS_WINDOWS = os.name == "nt"
 # signal.SIGKILL is POSIX-only; on Windows terminate_process_group() routes to
 # _windows_kill_tree() and ignores the signal, so any sentinel value is safe.
@@ -974,6 +974,14 @@ def subprocess_detach_kwargs() -> dict[str, Any]:
     return {"start_new_session": True}
 
 
+def resolve_windows_executable(cmd: list[str]) -> list[str]:
+    """CreateProcess does not resolve npm-style .CMD/.BAT shims from a bare name; shutil.which does."""
+    if not IS_WINDOWS or not cmd:
+        return cmd
+    resolved = shutil.which(cmd[0])
+    return [resolved, *cmd[1:]] if resolved else cmd
+
+
 def _windows_kill_tree(proc: Any) -> None:
     """Forcibly kill a Windows process and its whole descendant tree.
 
@@ -1069,6 +1077,7 @@ def build_agy_command(candidate: dict[str, Any], model: str, timeout: int, image
 
 async def run_subprocess(cmd: list[str], timeout: int, cwd: Path | None = None, input_text: str | None = None) -> tuple[int, str, str, float]:
     assert_allowed_subprocess(cmd)
+    cmd = resolve_windows_executable(cmd)
     started = time.perf_counter()
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -1533,6 +1542,7 @@ def background_run_mode(args: argparse.Namespace) -> int:
         cmd.extend(["--synthesizer", args.synthesizer])
     if getattr(args, "single_ok", False):
         cmd.append("--single-ok")
+    cmd = resolve_windows_executable(cmd)
     with prompt_path.open("rb") as stdin_f, stdout_path.open("wb") as stdout_f, stderr_path.open("wb") as stderr_f:
         proc = subprocess.Popen(cmd, stdin=stdin_f, stdout=stdout_f, stderr=stderr_f, **subprocess_detach_kwargs(), close_fds=True)
     job = {

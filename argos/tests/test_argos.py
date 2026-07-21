@@ -1637,6 +1637,69 @@ class SotaExplorerTests(unittest.TestCase):
         self.assertEqual(result["unexpected_urls"], [])
 
 
+class NativeWindowsExecutableResolutionTests(unittest.TestCase):
+    def test_resolve_windows_executable_rewrites_bare_shim_to_full_path(self) -> None:
+        with (
+            mock.patch.object(argos, "IS_WINDOWS", True),
+            mock.patch.object(argos.shutil, "which", return_value=r"C:\x\opencode.CMD"),
+        ):
+            resolved = argos.resolve_windows_executable(["opencode", "run", "--pure"])
+        self.assertEqual(resolved, [r"C:\x\opencode.CMD", "run", "--pure"])
+
+    def test_resolve_windows_executable_leaves_cmd_when_which_finds_nothing(self) -> None:
+        with (
+            mock.patch.object(argos, "IS_WINDOWS", True),
+            mock.patch.object(argos.shutil, "which", return_value=None),
+        ):
+            resolved = argos.resolve_windows_executable(["opencode", "run"])
+        self.assertEqual(resolved, ["opencode", "run"])
+
+    def test_resolve_windows_executable_is_noop_off_windows_without_which_lookup(self) -> None:
+        which = mock.Mock()
+        with (
+            mock.patch.object(argos, "IS_WINDOWS", False),
+            mock.patch.object(argos.shutil, "which", which),
+        ):
+            resolved = argos.resolve_windows_executable(["opencode", "run"])
+        self.assertEqual(resolved, ["opencode", "run"])
+        which.assert_not_called()
+
+    def test_run_subprocess_spawns_resolved_windows_path_after_allowlist(self) -> None:
+        recorded: dict[str, tuple] = {}
+
+        async def fake_exec(*cmd, **kwargs):
+            recorded["cmd"] = cmd
+
+            async def communicate(inp=None):
+                return b"", b""
+
+            proc = mock.Mock()
+            proc.communicate = communicate
+            proc.returncode = 0
+            return proc
+
+        with tempfile.TemporaryDirectory() as td, (
+            mock.patch.object(argos, "IS_WINDOWS", True)
+        ), mock.patch.object(argos.shutil, "which", return_value=r"C:\x\opencode.CMD"), mock.patch.object(
+            argos.asyncio, "create_subprocess_exec", fake_exec
+        ):
+            rc, _out, _err, _dur = asyncio.run(
+                argos.run_subprocess(["opencode", "run"], timeout=5, cwd=Path(td))
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(recorded["cmd"][0], r"C:\x\opencode.CMD")
+        self.assertEqual(recorded["cmd"][1], "run")
+
+    def test_run_subprocess_resolves_only_after_the_allowlist_gate(self) -> None:
+        src = inspect.getsource(argos.run_subprocess)
+        self.assertIn("assert_allowed_subprocess(cmd)", src)
+        self.assertIn("resolve_windows_executable(cmd)", src)
+        self.assertLess(
+            src.index("assert_allowed_subprocess(cmd)"),
+            src.index("resolve_windows_executable(cmd)"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
 
