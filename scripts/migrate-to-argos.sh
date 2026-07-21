@@ -87,7 +87,18 @@ fi
 # 4) Miroir Windows natif (parité WSL <-> Windows)
 if [ "$DO_MIRROR" = "1" ]; then
   echo "== miroir Windows: $MIRROR_DEST =="
-  if [ -d /mnt/f/dev ]; then
+  if [ -d "$MIRROR_DEST/.git" ]; then
+    # Clone git détecté côté F: — on ne rsync JAMAIS par-dessus un clone
+    # (ça salit l'arbre de travail et bloque les git pull suivants).
+    echo "-- clone git détecté : sync via git (nécessite commit+push préalables)"
+    if git -C "$MIRROR_DEST" pull --ff-only 2>/dev/null; then
+      echo "git pull OK côté F:."
+    else
+      echo "git pull impossible depuis WSL (ownership drvfs ou arbre sale) — fais côté Windows :"
+      echo "  git -C F:\\dev\\open-argos pull --ff-only"
+      echo "  (arbre sale suite à un ancien rsync ? git -C F:\\dev\\open-argos reset --hard origin/main)"
+    fi
+  elif [ -d /mnt/f/dev ]; then
     mkdir -p "$MIRROR_DEST"
     # .git est EXCLU : rsync ne peut pas remplacer les objets git en lecture seule
     # sur NTFS/drvfs (Permission denied). Le repo git côté Windows doit être un

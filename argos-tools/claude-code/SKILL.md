@@ -24,6 +24,16 @@ argos doctor --json          # readiness check (core_text_argoses must be true)
 argos benchmark --json       # provider-free internal quality gate
 ```
 
+## Windows / PowerShell gotcha
+
+In PowerShell, a bare `@word` is the splatting operator and the argument silently disappears. ALWAYS quote presets there:
+
+```
+argos "@review" "<prompt>" --file path\to\file
+```
+
+(cmd.exe and bash do not need the quotes.)
+
 ## Rules (from the argos context contract)
 
 1. Build a concise prompt: goal, constraints, acceptance criteria, known risks as numbered bullets.
