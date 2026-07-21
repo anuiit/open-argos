@@ -1,5 +1,5 @@
 {
-  "version": "1.0.9",
+  "version": "1.1.0",
   "created_at": "2026-07-09",
   "judge_config": "benchmarks/frozen/judge-v1.json",
   "cases": [
@@ -290,7 +290,7 @@
           "expected_terms": [
             "untrusted",
             "ignore",
-            "nested mosaic",
+            "nested argos",
             "tool execution"
           ]
         }
@@ -321,7 +321,7 @@
             "negative cost",
             "missing cost",
             "duration",
-            "per mosaic"
+            "per argos"
           ]
         }
       ],
@@ -351,11 +351,11 @@
   "infra_cases": [
     {
       "case_id": "internal-benchmark-001",
-      "method": "mosaic benchmark --json",
+      "method": "argos benchmark --json",
       "expected_status": "pass"
     }
   ],
-  "version_reason": "Adds static scorer controls for case-specific real-actionability anchors introduced in v1.0.8. Requires re-baseline.",
+  "version_reason": "Project renamed to open-argos (CLI argos, core 0.7.0, internal suite argos-internal-quality): fixture and manifest strings updated to the new naming, so fixture hashes are invalidated by design. Requires full re-baseline before any official scoring; 1.0.x results are not comparable.",
   "scorer_cases": [
     {
       "case_id": "scorer-trap-positive-001",

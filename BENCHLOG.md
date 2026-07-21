@@ -484,3 +484,22 @@ Reason for run 2:
 - Cheap artifact: `/home/sina/mosaic-dev/benchmarks/results/20260710T165441Z-v1.0.9-cheap-minimax`; score `91.587151`; real actionability mean `0.65`; real full-count `0`; scorer anchor controls PASS; no `needs_human`.
 - Full artifact: `/home/sina/mosaic-dev/benchmarks/results/20260710T165812Z-v1.0.9-full-minimax`; score `91.093171`; axes `36.093171/20/25/10`; cost `0.049984`; latency `506.486s`; real actionability mean `0.862333`; real full-count `1`; scorer anchor controls PASS; no `needs_human`.
 - Interpretation: v1.0.9 is the current benchmark baseline. The lower full score is dominated by a live miss on `injected-prompt-injection-007` (`recall=0`, `score=0.31`) and should be treated as model-output variance plus stricter benchmark measurement, not a product regression.
+
+
+### Project Rename — mosaic → open-argos (2026-07-21)
+
+- Date: 2026-07-21. Project renamed from `mosaic` to `open-argos`; CLI renamed `mosaic` → `argos`; core version `0.7.0`.
+- Renames applied: `mosaic/` → `argos/`, `bin/mosaic-dev` → `bin/argos-dev`, `.config/mosaic-dev` → `.config/argos-dev`, `.mosaic/` → `.argos/`, `mos-tools/` → `argos-tools/`, skills `mos-*` → `argos-*`, env `MOSAIC_*` → `ARGOS_*`, runner `scripts/bench_mosaic_quality.py` → `scripts/bench_argos_quality.py`; internal benchmark suite renamed `argos-internal-quality`.
+- Golden manifest bumped `1.0.9` → `1.1.0`: the rename changes committed fixture strings (e.g. `Contrat argos:`), so all fixture hashes are invalidated by design; hash comparability with pre-rename fixtures is broken and assumed.
+- Native Windows parity added: process-tree kill via `taskkill /F /T` plus `CREATE_NEW_PROCESS_GROUP` on Windows; native mirror `F:\dev\open-argos` must keep feature parity with the WSL working copy (sync via `scripts/migrate-to-argos.sh`).
+- Requires rebaseline: yes, full profile, before any official scoring under v1.1.0. All pre-rename results (v1.0.x) are not comparable with v1.1.0 results.
+- Historical entries above intentionally keep the old `mosaic`/`advisor` naming; the stable install remains under the legacy name until human-validated promotion to `argos`.
+
+
+### Rebaseline v1.1.0 — official baseline under open-argos (2026-07-21)
+
+- Adversarial review fixes landed before this run: Windows-safe `SIGKILL` constant (`signal.SIGKILL` does not exist on Windows; the timeout kill path would have raised `AttributeError` natively), `doctor --json` flag accepted, PS 7.4+ exit-code propagation in `bin/argos-dev.ps1`, `git mv` failures no longer swallowed in `scripts/migrate-to-argos.sh`, plus 5 new kill-tree regression tests.
+- Gates before rebaseline: `pytest -q` PASS (`154 passed, 22 subtests` — includes the new Windows kill-tree tests), internal benchmark (`argos-internal-quality`) OK.
+- Full artifact: `/home/sina/mosaic-dev/benchmarks/results/20260721T014913Z-v1.1.0-full-minimax` (repo dir renamed to `open-argos` right after this run); score `93.731649`; axes `38.731649/20/25/10`; cost `~0.0613` (sum of per-case costs); latency `~491s`; real quality `0.9244`; injected quality `0.820893`; real actionability mean `0.832`; real full-count `2`; false-positive hits `0`; scorer selfcheck `1.0`; no `needs_human`.
+- Notable: `injected-prompt-injection-007` observes `recall=1.0`, `score=0.756667` — the v1.0.9 live miss (`recall=0`, `score=0.31`) is resolved; treat as model-output variance recovery, monitor across future runs.
+- Interpretation: this is the official baseline for v1.1.0 / argos core 0.7.0. Not comparable with any v1.0.x score by design (fixture hashes invalidated by the rename).

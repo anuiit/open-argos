@@ -1,0 +1,25 @@
+{
+  "name": "argos-tools",
+  "version": "0.2.0+codex.20260721000000",
+  "description": "Codex skills for the local argos CLI, exposed as $argos-xxx commands.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Argos Tools",
+    "shortDescription": "Use local argos reviews, critiques, vision, SOTA research, config, and gates from Codex.",
+    "longDescription": "Argos Tools exposes the local argos CLI through Codex skills named argos-review, argos-critique, argos-plan, argos-vision, argos-sota, argos-config, argos-doctor, and argos-gate. The SOTA skill supports normal/deep research profiles, with normal as the default, and writes summary.json with source health and quality buckets. The plugin is a lightweight Codex facade; argos itself never launches Codex.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "skills"
+    ],
+    "defaultPrompt": [
+      "Run $argos-doctor to check argos/plugin readiness before using external argos.",
+      "Run $argos-review on this implementation plan with relevant files.",
+      "Run $argos-critique on this diff and classify blockers vs improvements.",
+      "Run $argos-sota to research the latest source-backed state of a domain."
+    ]
+  }
+}

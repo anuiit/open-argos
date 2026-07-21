@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export MOSAIC_CONFIG_DIR="$ROOT/.config/mosaic-dev"
-export MOSAIC_ARTIFACT_ROOT="$ROOT/.mosaic/sessions"
-export MOSAIC_LOCK_ROOT="$ROOT/.mosaic/locks"
-exec python3 "$ROOT/mosaic/mosaic.py" "$@"

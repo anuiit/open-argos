@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ARGOS_CONFIG_DIR="$ROOT/.config/argos-dev"
+export ARGOS_ARTIFACT_ROOT="$ROOT/.argos/sessions"
+export ARGOS_LOCK_ROOT="$ROOT/.argos/locks"
+exec python3 "$ROOT/argos/argos.py" "$@"
