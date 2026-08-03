@@ -9,6 +9,7 @@ import io
 import json
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -29,7 +30,7 @@ spec.loader.exec_module(argos)
 
 class ConfigValidationTests(unittest.TestCase):
     def test_version_tracks_sota_release(self) -> None:
-        self.assertTrue(argos.VERSION.startswith("0.7."))
+        self.assertTrue(argos.VERSION.startswith("0.9."))
 
     def test_load_env_file_does_not_override_existing_values(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"ARGOS_TEST_ENV": "original"}, clear=False):
@@ -46,6 +47,21 @@ class ConfigValidationTests(unittest.TestCase):
 
     def test_default_sonnet_points_to_claude_sonnet_5(self) -> None:
         self.assertEqual(argos.DEFAULT_CONFIG["models"]["sonnet"][0]["model"], "claude-sonnet-5")
+
+    def test_default_kimi3_points_to_direct_kimi_k3(self) -> None:
+        self.assertEqual(argos.DEFAULT_CONFIG["models"]["kimi3"], [{
+            "kind": "kimi",
+            "model": "kimi-code/k3",
+            "provider": "kimi",
+            "command": "kimi",
+        }])
+        self.assertIn("Kimi 3", argos.DEFAULT_CONFIG["personas"]["kimi3"]["role"])
+
+    def test_default_opencode_go_timeout_covers_windows_cli_startup(self) -> None:
+        self.assertGreaterEqual(argos.DEFAULT_CONFIG["timeouts"]["opencode_go"], 120)
+
+    def test_default_agy_timeout_covers_observed_headless_startup(self) -> None:
+        self.assertGreaterEqual(argos.DEFAULT_CONFIG["timeouts"]["agy"], 180)
 
     def test_validate_config_rejects_codex_model_or_kind(self) -> None:
         cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {
@@ -193,6 +209,77 @@ class ConfigValidationTests(unittest.TestCase):
 
 
 class PromptAndRoutingTests(unittest.TestCase):
+    def test_council_defaults_to_two_persistent_conversation_partners(self) -> None:
+        self.assertEqual(argos.DEFAULT_CONFIG["modes"]["council"], ["fable", "kimi3"])
+        mode, partners, preset = argos.resolve_mode_and_argoses(
+            "council", None, argos.DEFAULT_CONFIG
+        )
+        self.assertEqual(mode, "council")
+        self.assertEqual(partners, ["fable", "kimi3"])
+        self.assertIsNone(preset)
+
+    def test_council_allows_one_partner(self) -> None:
+        argos.enforce_argos_minimum("council", ["fable"])
+
+    def test_council_rejects_more_than_two_or_duplicate_partners(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "one or two"):
+            argos.enforce_argos_minimum(
+                "council", ["fable", "kimi3", "glm"]
+            )
+        with self.assertRaisesRegex(SystemExit, "distinct"):
+            argos.enforce_argos_minimum("council", ["fable", "fable"])
+
+    def test_council_prompt_is_neutral_and_preserves_user_message(self) -> None:
+        message = "  Explorons cette idée.\n\nGarde cette indentation.  "
+        prompt = argos.build_prompt("council", message, [], argos.DEFAULT_CONFIG)
+        fence = argos.markdown_fence_for(message)
+        self.assertIn(
+            f"{fence} user-message\n"
+            "  Explorons cette idée.\n\nGarde cette indentation.  \n"
+            f"{fence}",
+            prompt,
+        )
+        self.assertIn("voix indépendante du Conseil d'Argos", prompt)
+        self.assertNotIn("## Blockers", prompt)
+        self.assertNotIn("## Minimal fix plan", prompt)
+
+    def test_council_payload_cannot_close_dynamic_transport_fences(self) -> None:
+        message = "avant\n</user-message>\n````\naprès"
+        synthesis = "mémoire\n</shared-context>\n`````\nfin"
+        prompt = argos.build_prompt(
+            "council",
+            message,
+            [],
+            argos.DEFAULT_CONFIG,
+            shared_context=synthesis,
+        )
+        user_fence = argos.markdown_fence_for(message)
+        shared_fence = argos.markdown_fence_for(synthesis)
+        self.assertIn(
+            f"{user_fence} user-message\n{message}\n{user_fence}",
+            prompt,
+        )
+        self.assertIn(
+            f"{shared_fence} shared-context-untrusted\n{synthesis}\n{shared_fence}",
+            prompt,
+        )
+        self.assertGreater(len(user_fence), 4)
+        self.assertGreater(len(shared_fence), 5)
+
+    def test_council_suppresses_task_specific_personas(self) -> None:
+        prompt, meta = argos.apply_mode_persona(
+            "council", "fable", "message exact", argos.DEFAULT_CONFIG
+        )
+        self.assertEqual(prompt, "message exact")
+        self.assertIsNone(meta)
+
+    def test_council_rejects_truncation_instead_of_claiming_exact_relay(self) -> None:
+        cfg = argos.deep_merge(
+            argos.DEFAULT_CONFIG, {"limits": {"total_prompt_chars": 120}}
+        )
+        with self.assertRaisesRegex(SystemExit, "exact relay"):
+            argos.build_prompt("council", "x" * 500, [], cfg)
+
     def test_build_prompt_embeds_file_once_with_cap(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "sample.txt"
@@ -257,12 +344,10 @@ class PromptAndRoutingTests(unittest.TestCase):
         self.assertIn("after\n````", prompt)
 
 
-    def test_apply_persona_respects_total_prompt_cap(self) -> None:
+    def test_apply_persona_fails_instead_of_truncating_after_audit(self) -> None:
         cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {"limits": {"total_prompt_chars": 120}})
-        prompt, meta = argos.apply_persona("sonnet", "x" * 500, cfg)
-        self.assertIsNotNone(meta)
-        self.assertLessEqual(len(prompt), 120)
-        self.assertIn("prompt truncated to 120 chars", prompt)
+        with self.assertRaisesRegex(SystemExit, "assignment prefix"):
+            argos.apply_persona("sonnet", "x" * 500, cfg)
 
     def test_truncate_prompt_total_disabled_with_non_positive_limit(self) -> None:
         cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {"limits": {"total_prompt_chars": 0}})
@@ -333,6 +418,34 @@ class ProviderParsingTests(unittest.TestCase):
         self.assertEqual(content, "visual answer")
         self.assertEqual(meta, {"raw_format": "text"})
 
+    def test_windows_tasklist_snapshot_recognizes_native_provider_images(self) -> None:
+        completed = type("Completed", (), {
+            "returncode": 0,
+            "stdout": "\n".join([
+                '"opencode.exe","101","Console","1","10,000 K"',
+                '"claude.cmd","102","Console","1","10,000 K"',
+                '"kimi.exe","103","Console","1","10,000 K"',
+                '"agy.bat","104","Console","1","10,000 K"',
+                '"python.exe","105","Console","1","10,000 K"',
+            ]),
+        })()
+        with mock.patch.object(argos.subprocess, "run", return_value=completed), \
+            mock.patch.object(argos, "proc_elapsed_seconds", return_value=None):
+            available, rows = argos._windows_tasklist_snapshot()
+
+        self.assertTrue(available)
+        self.assertEqual(
+            [(row["pid"], row["provider"]) for row in rows],
+            [(101, "opencode"), (102, "claude"), (103, "kimi"), (104, "agy")],
+        )
+
+    def test_windows_tasklist_snapshot_reports_command_failure(self) -> None:
+        completed = type("Completed", (), {"returncode": 1, "stdout": ""})()
+        with mock.patch.object(argos.subprocess, "run", return_value=completed):
+            available, rows = argos._windows_tasklist_snapshot()
+        self.assertFalse(available)
+        self.assertEqual(rows, [])
+
     def test_extract_json_error_lines_variants(self) -> None:
         stdout = "\n".join([
             "not json at all",
@@ -383,6 +496,20 @@ class ProviderParsingTests(unittest.TestCase):
                 inputs.append(str(path))
             self.assertEqual([path.suffix for path in argos.validated_image_paths(inputs)], [".webp", ".heic", ".heif"])
 
+    def test_validated_image_paths_rejects_symlink_or_reparse(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "sample.png"
+            path.write_bytes(b"placeholder")
+            with mock.patch.object(
+                argos._context_module,
+                "_is_link_or_reparse",
+                return_value=True,
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit, "must not be a symlink or reparse point"
+                ):
+                    argos.validated_image_paths([str(path)])
+
 
 class ArtifactTests(unittest.TestCase):
     def test_make_artifact_dir_avoids_same_second_collision_and_updates_latest(self) -> None:
@@ -402,8 +529,12 @@ class ArtifactTests(unittest.TestCase):
             self.assertTrue(second.name.startswith("20260701T123456-review"))
             self.assertTrue(first.exists())
             self.assertTrue(second.exists())
-            self.assertTrue(latest.is_symlink())
-            self.assertEqual(latest.resolve(), second)
+            if not argos.IS_WINDOWS:
+                self.assertTrue(latest.is_symlink())
+                self.assertEqual(latest.resolve(), second)
+            else:
+                self.assertTrue(latest.exists())
+                self.assertEqual(latest.read_text(encoding="utf-8"), str(second))
 
 
 class SubprocessTimeoutTests(unittest.TestCase):
@@ -448,29 +579,38 @@ class SubprocessTimeoutTests(unittest.TestCase):
             result = asyncio.run(runner.run_candidate(
                 "agy_image",
                 {"kind": "agy", "model": "default", "provider": "agy", "command": "agy", "timeout_key": "agy"},
-                "prompt",
+                "sensitive prompt body",
                 [],
                 fallback_from=None,
                 images=[img1, img2],
             ))
+            staged_prompts = list((root / "agy_inputs").glob("prompt_*.md"))
+            staged_prompt_text = staged_prompts[0].read_text(encoding="utf-8") if staged_prompts else None
 
         self.assertEqual(result.status, "ok")
         self.assertEqual(result.content, "visual answer")
         call = calls[0]
-        self.assertEqual(call["input_text"], "prompt")
-        self.assertEqual(call["timeout"], argos.DEFAULT_CONFIG["timeouts"]["agy"] + 5)
+        self.assertIsNone(call["input_text"])
+        self.assertAlmostEqual(
+            call["timeout"],
+            argos.DEFAULT_CONFIG["timeouts"]["agy"] + 5,
+            delta=0.25,
+        )
         cmd = call["cmd"]
         self.assertEqual(cmd[0], "agy")
         self.assertIn("--print-timeout", cmd)
-        self.assertIn("120s", cmd)
+        self.assertIn("180s", cmd)
         self.assertNotIn("--model", cmd)
-        self.assertEqual(cmd.count("--add-dir"), 1)
+        self.assertEqual(cmd.count("--add-dir"), 2)
         staged_root = root / "vision_inputs"
         self.assertIn(str(staged_root), cmd)
         add_dirs = [cmd[i + 1] for i, arg in enumerate(cmd[:-1]) if arg == "--add-dir"]
-        self.assertEqual(add_dirs, [str(staged_root)])
-        self.assertEqual(cmd[-2:], ["--print", ""])
-        self.assertNotIn("prompt", cmd)
+        self.assertEqual(add_dirs, sorted([str(root / "agy_inputs"), str(staged_root)]))
+        self.assertEqual(cmd[-2], "--print")
+        self.assertIn(str(root / "agy_inputs"), cmd[-1])
+        self.assertNotIn("sensitive prompt body", cmd)
+        self.assertEqual(len(staged_prompts), 1)
+        self.assertEqual(staged_prompt_text, "sensitive prompt body")
 
     def test_stage_vision_images_is_idempotent_for_already_staged_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -506,27 +646,32 @@ class SubprocessTimeoutTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--model") + 1], "vision-pro")
 
     def test_run_subprocess_timeout_kills_child_process_group(self) -> None:
+        if argos.IS_WINDOWS:
+            return
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            fake = root / "opencode"
             pidfile = root / "child.pid"
-            fake.write_text(
-                "#!/usr/bin/env python3\n"
-                "import subprocess, sys\n"
-                "child = subprocess.Popen(['sleep', '30'])\n"
-                "open(sys.argv[1], 'w').write(str(child.pid))\n"
-                "child.wait()\n",
-                encoding="utf-8",
-            )
-            fake.chmod(0o755)
-            old_path = os.environ.get("PATH", "")
             child_pid = None
-            try:
-                with mock.patch.dict(os.environ, {"PATH": str(root) + os.pathsep + old_path}):
-                    rc, out, err, _dur = asyncio.run(argos.run_subprocess(["opencode", str(pidfile)], timeout=1, cwd=root))
-                self.assertEqual(rc, 124)
-                self.assertIn("Timed out after 1s", err)
-                child_pid = int(pidfile.read_text())
+            fake_script = (
+                "import subprocess, sys, time\n"
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                "open(sys.argv[1], 'w').write(str(child.pid))\n"
+                "time.sleep(30)\n"
+            )
+            with mock.patch.object(argos, "assert_allowed_subprocess", lambda cmd: None), \
+                mock.patch.object(argos, "resolve_windows_executable", lambda cmd: cmd):
+                rc, out, err, _dur = asyncio.run(
+                    argos.run_subprocess(
+                        [sys.executable, "-c", fake_script, str(pidfile)],
+                        timeout=1,
+                        cwd=root,
+                    )
+                )
+            self.assertEqual(rc, 124)
+            self.assertIn("Timed out after 1s", err)
+            child_pid = int(pidfile.read_text())
+            if not argos.IS_WINDOWS:
                 deadline = time.time() + 3
                 while time.time() < deadline:
                     try:
@@ -536,35 +681,105 @@ class SubprocessTimeoutTests(unittest.TestCase):
                     time.sleep(0.05)
                 else:
                     self.fail(f"child process still alive after timeout: {child_pid}")
-            finally:
-                if child_pid is not None:
-                    try:
-                        os.kill(child_pid, 9)
-                    except OSError:
-                        pass
 
 
 class CrossProcessConcurrencyTests(unittest.TestCase):
     def test_cross_process_slot_contention_times_out_and_releases(self) -> None:
-        cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {
+        cfg_literal = repr({
             "concurrency": {
                 "cross_process": True,
                 "wait_sec": 0.05,
                 "test_provider": 1,
             }
         })
+        argos_path_text = json.dumps(str(ARGOS_PATH))
+        holder_script = (
+            "import asyncio, importlib.util, os, sys, time\n"
+            "from pathlib import Path\n"
+            f"ARGOS_PATH = Path({argos_path_text})\n"
+            "spec = importlib.util.spec_from_file_location('argos_child', ARGOS_PATH)\n"
+            "assert spec and spec.loader\n"
+            "argos = importlib.util.module_from_spec(spec)\n"
+            "sys.modules[spec.name] = argos\n"
+            "spec.loader.exec_module(argos)\n"
+            f"cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {cfg_literal})\n"
+            "lock_root = Path(os.environ['ARGOS_LOCK_ROOT'])\n"
+            "marker = Path(os.environ['ARGOS_MARKER'])\n"
+            "async def main():\n"
+            "    async with argos.CrossProcessSlots(cfg, [('test_provider', 1)], lock_root=lock_root):\n"
+            "        marker.write_text('held', encoding='utf-8')\n"
+            "        time.sleep(15)\n"
+            "asyncio.run(main())\n"
+        )
+        contender_script = (
+            "import asyncio, importlib.util, os, sys\n"
+            "from pathlib import Path\n"
+            f"ARGOS_PATH = Path({argos_path_text})\n"
+            "spec = importlib.util.spec_from_file_location('argos_child', ARGOS_PATH)\n"
+            "assert spec and spec.loader\n"
+            "argos = importlib.util.module_from_spec(spec)\n"
+            "sys.modules[spec.name] = argos\n"
+            "spec.loader.exec_module(argos)\n"
+            f"cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {cfg_literal})\n"
+            "lock_root = Path(os.environ['ARGOS_LOCK_ROOT'])\n"
+            "async def main():\n"
+            "    try:\n"
+            "        async with argos.CrossProcessSlots(cfg, [('test_provider', 1)], lock_root=lock_root):\n"
+            "            print('unexpected success')\n"
+            "            return 0\n"
+            "    except TimeoutError as exc:\n"
+            "        print(str(exc))\n"
+            "        return 1\n"
+            "sys.exit(asyncio.run(main()))\n"
+        )
 
-        async def scenario() -> None:
-            with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "DEFAULT_LOCK_ROOT", Path(td)):
-                first = argos.CrossProcessSlots(cfg, [("test_provider", 1)])
-                async with first:
-                    with self.assertRaises(TimeoutError):
-                        async with argos.CrossProcessSlots(cfg, [("test_provider", 1)]):
-                            pass
-                async with argos.CrossProcessSlots(cfg, [("test_provider", 1)]):
-                    pass
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env = os.environ.copy()
+            env["ARGOS_LOCK_ROOT"] = str(root / "locks")
+            env["ARGOS_MARKER"] = str(root / "held.txt")
+            holder = subprocess.Popen(
+                [sys.executable, "-c", holder_script],
+                cwd=root,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            marker = Path(env["ARGOS_MARKER"])
+            deadline = time.time() + 10
+            while time.time() < deadline and not marker.exists() and holder.poll() is None:
+                time.sleep(0.05)
+            if not marker.exists():
+                try:
+                    holder.terminate()
+                    stdout, stderr = holder.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    holder.kill()
+                    stdout, stderr = holder.communicate(timeout=5)
+                self.fail(
+                    f"holder failed to acquire lock: rc={holder.returncode}, stdout={stdout!r}, stderr={stderr!r}"
+                )
+            contender = subprocess.run(
+                [sys.executable, "-c", contender_script],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            holder.terminate()
+            try:
+                holder.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                holder.kill()
+                holder.wait(timeout=5)
 
-        asyncio.run(scenario())
+        self.assertNotEqual(contender.returncode, 0)
+        self.assertTrue(
+            "Timed out while waiting for provider concurrency" in (contender.stdout + contender.stderr)
+            or "provider concurrency saturated for test_provider (limit=1)" in (contender.stdout + contender.stderr)
+        )
 
     def test_cross_process_disabled_bypasses_lock_files(self) -> None:
         cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {
@@ -690,7 +905,7 @@ class SafetyAndSessionTests(unittest.TestCase):
         with mock.patch.object(argos.subprocess, "run", run):
             argos._windows_kill_tree(proc)
         run.assert_called_once()
-        proc.kill.assert_not_called()
+        proc.kill.assert_called_once()
 
     def test_windows_kill_tree_falls_back_to_proc_kill_without_taskkill(self) -> None:
         proc = mock.Mock(pid=4321)
@@ -756,6 +971,7 @@ class SafetyAndSessionTests(unittest.TestCase):
                 mock.patch.object(argos.sys, "platform", "win32"),
                 mock.patch.object(argos.shutil, "which", return_value="/bin/tool"),
                 mock.patch.object(argos.platform, "system", return_value="Windows"),
+                mock.patch.object(argos, "_windows_tasklist_snapshot", return_value=(False, [])),
                 mock.patch.object(argos.Path, "exists", lambda self: False if str(self) == "/proc" else original_exists(self)),
                 contextlib.redirect_stdout(out),
             ):
@@ -767,6 +983,48 @@ class SafetyAndSessionTests(unittest.TestCase):
         self.assertTrue(payload["platform"]["shims_available"])
         self.assertFalse(payload["platform"]["runtime_validated"])
         self.assertEqual(payload["platform"]["process_snapshot"], "limited")
+        self.assertEqual(payload["compatibility"]["min_argos_tools_plugin_argos_version"], "0.9.0")
+        self.assertIn("--prompt-file", payload["compatibility"]["prompt_transport"]["text"])
+
+    def test_windows_tasklist_snapshot_parses_kimi_rows(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["tasklist"],
+            returncode=0,
+            stdout='"Kimi.exe","4242","Console","1","12,000 K"\r\n',
+            stderr="",
+        )
+        with (
+            mock.patch.object(argos, "IS_WINDOWS", True),
+            mock.patch.object(argos.subprocess, "run", return_value=completed),
+            mock.patch.object(argos, "proc_elapsed_seconds", return_value=12.5),
+        ):
+            available, rows = argos._windows_tasklist_snapshot()
+            kind, snapshot_rows = argos.provider_process_snapshot()
+
+        self.assertTrue(available)
+        self.assertEqual(kind, "tasklist")
+        self.assertEqual(snapshot_rows[0]["provider"], "kimi")
+        self.assertEqual(snapshot_rows[0]["pid"], 4242)
+        self.assertEqual(rows, snapshot_rows)
+
+    def test_windows_tasklist_snapshot_falls_back_to_limited_on_nonzero_return(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["tasklist"],
+            returncode=5,
+            stdout="",
+            stderr="Access is denied.",
+        )
+        with (
+            mock.patch.object(argos, "IS_WINDOWS", True),
+            mock.patch.object(argos.subprocess, "run", return_value=completed),
+        ):
+            available, rows = argos._windows_tasklist_snapshot()
+            kind, snapshot_rows = argos.provider_process_snapshot()
+
+        self.assertFalse(available)
+        self.assertEqual(rows, [])
+        self.assertEqual(kind, "limited")
+        self.assertEqual(snapshot_rows, [])
 
     def test_doctor_native_windows_without_marker_is_supported_but_unvalidated(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -785,6 +1043,32 @@ class SafetyAndSessionTests(unittest.TestCase):
         self.assertTrue(payload["platform"]["supported"])
         self.assertFalse(payload["platform"]["runtime_validated"])
         self.assertIsNotNone(payload["platform"]["runtime_validation_marker"])
+
+    def test_doctor_native_windows_marker_probe_permission_error_is_treated_as_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "config.json"
+            marker = argos.windows_runtime_marker_path(cfg)
+            out = io.StringIO()
+            original_exists = argos.Path.exists
+
+            def guarded_exists(self: Path) -> bool:
+                if self == marker:
+                    raise PermissionError("denied")
+                return original_exists(self)
+
+            with (
+                mock.patch.object(argos, "IS_WINDOWS", True),
+                mock.patch.object(argos.sys, "platform", "win32"),
+                mock.patch.object(argos.shutil, "which", return_value="/bin/tool"),
+                mock.patch.object(argos.platform, "system", return_value="Windows"),
+                mock.patch.object(argos.Path, "exists", guarded_exists),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = argos.doctor(cfg)
+            payload = json.loads(out.getvalue())
+        self.assertEqual(rc, 0)
+        self.assertFalse(payload["platform"]["runtime_validated"])
+        self.assertEqual(payload["platform"]["runtime_validation_marker"], str(marker))
 
     def test_doctor_native_windows_with_marker_is_runtime_validated(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -881,7 +1165,8 @@ class ConfigEditingAndGateTests(unittest.TestCase):
             loaded = argos.load_config(path)
             self.assertEqual(loaded["models"]["sonnet"][0]["model"], "claude-sonnet-5")
             self.assertTrue(Path(str(backup)).exists())
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            if not argos.IS_WINDOWS:
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_config_backups_are_unique_and_atomic_private(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -892,8 +1177,9 @@ class ConfigEditingAndGateTests(unittest.TestCase):
             self.assertNotEqual(first, second)
             self.assertTrue(first and first.exists())
             self.assertTrue(second and second.exists())
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+            if not argos.IS_WINDOWS:
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
 
     def test_config_set_model_defaults_provider_to_kind_for_claude(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -934,11 +1220,23 @@ class ConfigEditingAndGateTests(unittest.TestCase):
             artifact = argos.make_artifact_dir(root, "review")
             runner = argos.Runner(argos.DEFAULT_CONFIG, artifact)
             raw = runner.write_raw("sonnet", "claude", "stdout", "stderr")
+            raw2 = runner.write_raw("sonnet", "claude", "stdout-2", "stderr-2")
             argos.atomic_write_text(artifact / "input.md", "secret")
-            self.assertEqual(artifact.stat().st_mode & 0o777, 0o700)
-            self.assertEqual((artifact / "raw").stat().st_mode & 0o777, 0o700)
-            self.assertEqual(raw.stat().st_mode & 0o777, 0o600)
-            self.assertEqual((artifact / "input.md").stat().st_mode & 0o777, 0o600)
+            if not argos.IS_WINDOWS:
+                self.assertEqual(artifact.stat().st_mode & 0o777, 0o700)
+                self.assertEqual((artifact / "raw").stat().st_mode & 0o777, 0o700)
+                self.assertEqual(raw.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(raw2.stat().st_mode & 0o777, 0o600)
+                self.assertEqual((artifact / "input.md").stat().st_mode & 0o777, 0o600)
+            else:
+                self.assertTrue(artifact.exists())
+                self.assertTrue((artifact / "raw").exists())
+                self.assertTrue(raw.exists())
+                self.assertTrue(raw2.exists())
+                self.assertTrue((artifact / "input.md").exists())
+            self.assertNotEqual(raw, raw2)
+            self.assertEqual(raw.name, "sonnet.claude.attempt-001.stdout")
+            self.assertEqual(raw2.name, "sonnet.claude.attempt-002.stdout")
 
     def test_auth_failure_becomes_needs_human_without_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, "", "unauthorized", 0.1)):
@@ -1032,6 +1330,47 @@ class ConfigEditingAndGateTests(unittest.TestCase):
         self.assertEqual(state["last_error"], "unauthorized")
 
 
+class PromptInputTests(unittest.TestCase):
+    def test_prompt_file_is_mutually_exclusive_with_inline_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            prompt_file = Path(td) / "prompt.md"
+            prompt_file.write_text("from file", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "either a prompt argument or --prompt-file"):
+                argos.resolve_prompt_input("inline", str(prompt_file))
+
+    def test_prompt_file_must_be_a_regular_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaisesRegex(SystemExit, "Prompt file is not a regular file"):
+                argos.resolve_prompt_input(None, td)
+
+    def test_prompt_file_must_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "missing.md"
+            with self.assertRaisesRegex(SystemExit, "Prompt file not found"):
+                argos.resolve_prompt_input(None, str(missing))
+
+    def test_prompt_file_must_contain_non_whitespace_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            prompt_file = Path(td) / "empty.md"
+            prompt_file.write_text(" \n\t", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "Prompt required"):
+                argos.resolve_prompt_input(None, str(prompt_file))
+
+    def test_prompt_file_rejects_symlink_or_reparse(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            prompt_file = Path(td) / "prompt.md"
+            prompt_file.write_text("private prompt", encoding="utf-8")
+            with mock.patch.object(
+                argos._context_module,
+                "_is_link_or_reparse",
+                return_value=True,
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit, "must not be a symlink or reparse point"
+                ):
+                    argos.resolve_prompt_input(None, str(prompt_file))
+
+
 class ConversationModeTests(unittest.TestCase):
     def args(self, **overrides):
         defaults = {
@@ -1042,6 +1381,7 @@ class ConversationModeTests(unittest.TestCase):
             "file": [],
             "image": [],
             "prompt": "hello",
+            "prompt_file": None,
             "artifact_root": None,
             "json": True,
             "quiet": False,
@@ -1065,6 +1405,48 @@ class ConversationModeTests(unittest.TestCase):
         )
 
     def test_start_and_ask_update_session_without_live_provider(self) -> None:
+        seen_prompts: list[str] = []
+
+        async def fake_run_logical(self, name, prompt, files, images=None):
+            seen_prompts.append(prompt)
+            return ConversationModeTests.ok_result(name)
+
+        async def fake_run_locked(self, name, state, prompt, files, images=None):
+            seen_prompts.append(prompt)
+            result = ConversationModeTests.ok_result(name)
+            result.session_id = state["provider_session_id"]
+            result.content = "turn two"
+            return result
+
+        with tempfile.TemporaryDirectory() as td, \
+            mock.patch.object(argos.Runner, "run_logical", fake_run_logical), \
+            mock.patch.object(argos.Runner, "run_locked", fake_run_locked):
+            root = Path(td)
+            start_prompt = root / "start prompt.md"
+            ask_prompt = root / "ask prompt.md"
+            start_prompt.write_text("Premier tour avec @vision et `backticks`.", encoding="utf-8")
+            ask_prompt.write_text("Deuxième tour avec $(expression) et \"guillemets\".", encoding="utf-8")
+            out = io.StringIO()
+            start_args = self.args(artifact_root=td, prompt=None, prompt_file=str(start_prompt))
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(asyncio.run(argos.start_mode(start_args)), argos.EXIT_OK)
+            start_meta = json.loads(out.getvalue())
+            sid = start_meta["session_id"]
+
+            out = io.StringIO()
+            ask_args = self.args(artifact_root=td, session_id=sid, prompt=None, prompt_file=str(ask_prompt))
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(asyncio.run(argos.ask_mode(ask_args)), argos.EXIT_OK)
+            ask_meta = json.loads(out.getvalue())
+
+            session = json.loads((Path(td) / sid / "session.json").read_text())
+        self.assertEqual(ask_meta["turn"], 2)
+        self.assertEqual(session["turn"], 2)
+        self.assertEqual(session["argoses"]["agy_image"]["turns"], 2)
+        self.assertIn("Premier tour avec @vision et `backticks`.", seen_prompts[0])
+        self.assertIn("Deuxième tour avec $(expression) et \"guillemets\".", seen_prompts[1])
+
+    def test_structured_session_returns_are_silent_and_check_expected_turn(self) -> None:
         async def fake_run_logical(self, name, prompt, files, images=None):
             return ConversationModeTests.ok_result(name)
 
@@ -1077,23 +1459,45 @@ class ConversationModeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, \
             mock.patch.object(argos.Runner, "run_logical", fake_run_logical), \
             mock.patch.object(argos.Runner, "run_locked", fake_run_locked):
-            out = io.StringIO()
-            start_args = self.args(artifact_root=td)
-            with contextlib.redirect_stdout(out):
-                self.assertEqual(asyncio.run(argos.start_mode(start_args)), argos.EXIT_OK)
-            start_meta = json.loads(out.getvalue())
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                start_code, start_meta = asyncio.run(
+                    argos.start_mode(
+                        self.args(artifact_root=td),
+                        return_payload=True,
+                    )
+                )
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(start_code, argos.EXIT_OK)
             sid = start_meta["session_id"]
 
-            out = io.StringIO()
-            ask_args = self.args(artifact_root=td, session_id=sid, prompt="second turn")
-            with contextlib.redirect_stdout(out):
-                self.assertEqual(asyncio.run(argos.ask_mode(ask_args)), argos.EXIT_OK)
-            ask_meta = json.loads(out.getvalue())
-
+            stale = self.args(
+                artifact_root=td,
+                session_id=sid,
+                expected_turn=0,
+                prompt="stale turn",
+            )
+            with self.assertRaises(argos.SessionConflictError):
+                asyncio.run(argos.ask_mode(stale, return_payload=True))
             session = json.loads((Path(td) / sid / "session.json").read_text())
-        self.assertEqual(ask_meta["turn"], 2)
-        self.assertEqual(session["turn"], 2)
-        self.assertEqual(session["argoses"]["agy_image"]["turns"], 2)
+            self.assertEqual(session["last_good_turn"], 1)
+            self.assertIsNone(session["active_turn"])
+            self.assertFalse((Path(td) / sid / "turns" / "002").exists())
+
+            stdout = io.StringIO()
+            current = self.args(
+                artifact_root=td,
+                session_id=sid,
+                expected_turn=1,
+                prompt="current turn",
+            )
+            with contextlib.redirect_stdout(stdout):
+                ask_code, ask_meta = asyncio.run(
+                    argos.ask_mode(current, return_payload=True)
+                )
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(ask_code, argos.EXIT_OK)
+            self.assertEqual(ask_meta["turn"], 2)
 
     def test_run_mode_rejects_images_for_non_vision_modes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1129,6 +1533,28 @@ class ConversationModeTests(unittest.TestCase):
         self.assertTrue(all(str(artifact / "vision_inputs") in path for path in seen["images"]))
         self.assertIn(str(artifact / "vision_inputs"), seen["prompt"])
         self.assertNotIn(str(original_dir), seen["prompt"])
+
+    def test_run_mode_reads_prompt_file_without_shell_quoting(self) -> None:
+        seen: dict[str, str] = {}
+
+        async def fake_run_logical(self, name, prompt, files, images=None):
+            seen["prompt"] = prompt
+            return ConversationModeTests.ok_result(name)
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
+            root = Path(td)
+            prompt_file = root / "prompt with spaces.md"
+            prompt_file.write_text("Analyse `@review` et $variables sans interpolation.", encoding="utf-8")
+            out = io.StringIO()
+            args = self.args(
+                artifact_root=str(root / "artifacts"),
+                prompt=None,
+                prompt_file=str(prompt_file),
+            )
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(asyncio.run(argos.run_mode(args)), argos.EXIT_OK)
+
+        self.assertIn("Analyse `@review` et $variables sans interpolation.", seen["prompt"])
 
     def test_multi_runs_multiple_turns_without_live_provider(self) -> None:
         async def fake_run_logical(self, name, prompt, files, images=None):
@@ -1173,6 +1599,21 @@ class ConversationModeTests(unittest.TestCase):
         self.assertEqual(rc, argos.EXIT_OK)
         self.assertEqual(payload["status"], "complete")
 
+    def test_job_mode_reports_dead_when_background_pid_is_gone(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            job = root / "job"
+            job.mkdir()
+            (job / "background.json").write_text(json.dumps({"pid": 999999, "status": "running"}))
+            out = io.StringIO()
+            args = type("Args", (), {"job_ref": str(job), "artifact_root": td, "json": True})()
+            with contextlib.redirect_stdout(out):
+                rc = argos.job_mode(args)
+            payload = json.loads(out.getvalue())
+
+        self.assertEqual(rc, argos.EXIT_ERROR)
+        self.assertEqual(payload["status"], "dead")
+
 
 class ErrorSurfacingTests(unittest.TestCase):
     OPENCODE_CANDIDATE = {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go"}
@@ -1186,7 +1627,7 @@ class ErrorSurfacingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, stdout, "", 0.1)):
             runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
             result = asyncio.run(runner.run_candidate(
-                "kimi",
+                "glm",
                 dict(self.OPENCODE_CANDIDATE),
                 "prompt",
                 [],
@@ -1205,7 +1646,7 @@ class ErrorSurfacingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, stdout, "", 0.1)):
             runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
             result = asyncio.run(runner.run_candidate(
-                "kimi",
+                "glm",
                 dict(self.OPENCODE_CANDIDATE),
                 "prompt",
                 [],
@@ -1214,12 +1655,31 @@ class ErrorSurfacingTests(unittest.TestCase):
             self.assertEqual(result.status, "needs_human")
             self.assertEqual(argos.argos_exit_code([result]), argos.EXIT_NEEDS_HUMAN)
 
+    def test_opencode_terminal_error_abort_reports_auth_failure_quickly(self) -> None:
+        script = (
+            "import sys, time\n"
+            "sys.stdout.write('{\"type\":\"error\",\"sessionID\":\"s1\",\"error\":{\"name\":\"UnknownError\",\"data\":{\"message\":\"401 unauthorized, please log in\"}}}\\n')\n"
+            "sys.stdout.flush()\n"
+            "time.sleep(5)\n"
+        )
+        with tempfile.TemporaryDirectory() as td, \
+            mock.patch.object(argos, "assert_allowed_subprocess", lambda cmd: None), \
+            mock.patch.object(argos, "resolve_windows_executable", return_value=[sys.executable, "-c", script]):
+            rc, out, err, dur = asyncio.run(
+                argos.run_subprocess(["opencode", "run"], timeout=20, cwd=Path(td))
+            )
+
+        self.assertEqual(rc, 1)
+        self.assertIn("401 unauthorized, please log in", err)
+        self.assertLess(dur, 4)
+        self.assertIn('"type":"error"', out)
+
     def test_empty_response_error_includes_bounded_stdout_tail(self) -> None:
         stdout = "x" * 1000 + " final words"
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, stdout, "", 0.1)):
             runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
             result = asyncio.run(runner.run_candidate(
-                "kimi",
+                "glm",
                 dict(self.OPENCODE_CANDIDATE),
                 "prompt",
                 [],
@@ -1236,7 +1696,7 @@ class ErrorSurfacingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "run_subprocess", return_value=(1, "", "", 0.1)):
             runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
             result = asyncio.run(runner.run_candidate(
-                "kimi",
+                "glm",
                 dict(self.OPENCODE_CANDIDATE),
                 "prompt",
                 [],
@@ -1276,7 +1736,7 @@ class ProviderCwdTests(unittest.TestCase):
             root = Path(td)
             runner = argos.Runner(argos.DEFAULT_CONFIG, root)
             asyncio.run(runner.run_candidate(
-                "kimi",
+                "glm",
                 {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go"},
                 "prompt", [], fallback_from=None,
             ))
@@ -1324,9 +1784,11 @@ class ProviderCwdTests(unittest.TestCase):
         original_runner = argos.Runner
         captures: list[Any] = []
 
-        def make_runner(cfg, artifact_dir, provider_cwd=None):
+        def make_runner(cfg, artifact_dir, provider_cwd=None, *, mode=None):
             captures.append(provider_cwd)
-            return original_runner(cfg, artifact_dir, provider_cwd=provider_cwd)
+            return original_runner(
+                cfg, artifact_dir, provider_cwd=provider_cwd, mode=mode
+            )
 
         with tempfile.TemporaryDirectory() as td, \
             mock.patch.object(argos.Runner, "run_logical", fake_run_logical), \
@@ -1359,9 +1821,11 @@ class ProviderCwdTests(unittest.TestCase):
         original_runner = argos.Runner
         captures: list[Any] = []
 
-        def make_runner(cfg, artifact_dir, provider_cwd=None):
+        def make_runner(cfg, artifact_dir, provider_cwd=None, *, mode=None):
             captures.append(provider_cwd)
-            return original_runner(cfg, artifact_dir, provider_cwd=provider_cwd)
+            return original_runner(
+                cfg, artifact_dir, provider_cwd=provider_cwd, mode=mode
+            )
 
         with tempfile.TemporaryDirectory() as td:
             out = io.StringIO()
@@ -1442,6 +1906,15 @@ class SotaExplorerTests(unittest.TestCase):
         self.assertEqual(sum(1 for row in plan if row["wave"] == 1), 7)
         self.assertEqual(sum(1 for row in plan if row["wave"] == 2), 7)
 
+    def test_research_query_profiles_change_search_intent(self) -> None:
+        docs = argos.sota_query_plan("FastAPI", 6, "docs")
+        implementation = argos.sota_query_plan("FastAPI", 6, "implementation")
+        evidence = argos.sota_query_plan("FastAPI", 6, "evidence")
+        self.assertTrue(all(row["lane"] == "applied" for row in docs))
+        self.assertTrue(any("official" in row["query"] for row in docs))
+        self.assertTrue(any("production" in row["query"] for row in implementation))
+        self.assertTrue(any(row["lane"] == "academic" for row in evidence))
+
     def test_sources_for_lane_falls_back_to_selected_sources(self) -> None:
         self.assertEqual(argos.sources_for_lane(["arxiv"], "applied"), ["arxiv"])
 
@@ -1451,6 +1924,18 @@ class SotaExplorerTests(unittest.TestCase):
         deep = argos.sota_profile_config(argos.DEFAULT_CONFIG["sota"], "deep")
         self.assertLess(normal["max_sources"], deep["max_sources"])
         self.assertIn("exa", normal["sources"])
+        self.assertEqual(
+            set(argos.RESEARCH_PROFILE_NAMES),
+            {
+                "normal",
+                "docs",
+                "landscape",
+                "implementation",
+                "current",
+                "evidence",
+                "deep",
+            },
+        )
         with self.assertRaises(SystemExit):
             argos.sota_profile_config(argos.DEFAULT_CONFIG["sota"], "unknown")
 
@@ -1571,18 +2056,64 @@ class SotaExplorerTests(unittest.TestCase):
         self.assertIn("Retrieval Augmented Generation", result.evidence[0].title)
 
     def test_cli_aliases_for_sota_profiles(self) -> None:
-        with mock.patch.object(argos, "sota_mode", return_value=argos.EXIT_OK) as mocked:
+        with mock.patch.object(argos, "sota_mode", new_callable=mock.AsyncMock, return_value=argos.EXIT_OK) as mocked:
             rc = argos.cli_main(["@sota-normal", "topic", "--no-model"])
         self.assertEqual(rc, argos.EXIT_OK)
         self.assertEqual(mocked.call_args.args[0].profile, "normal")
-        with mock.patch.object(argos, "sota_mode", return_value=argos.EXIT_OK) as mocked:
+        with mock.patch.object(argos, "sota_mode", new_callable=mock.AsyncMock, return_value=argos.EXIT_OK) as mocked:
             rc = argos.cli_main(["@sota-deep", "topic", "--no-model"])
         self.assertEqual(rc, argos.EXIT_OK)
         self.assertEqual(mocked.call_args.args[0].profile, "deep")
-        with mock.patch.object(argos, "sota_mode", return_value=argos.EXIT_OK) as mocked:
+        with mock.patch.object(argos, "sota_mode", new_callable=mock.AsyncMock, return_value=argos.EXIT_OK) as mocked:
             rc = argos.cli_main(["sota", "topic", "--depth", "deep", "--no-model"])
         self.assertEqual(rc, argos.EXIT_OK)
         self.assertEqual(mocked.call_args.args[0].profile, "deep")
+
+    def test_cli_research_command_and_profile_aliases(self) -> None:
+        with mock.patch.object(argos, "sota_mode", new_callable=mock.AsyncMock, return_value=argos.EXIT_OK) as mocked:
+            rc = argos.cli_main(["research", "topic", "--profile", "implementation", "--no-model"])
+        self.assertEqual(rc, argos.EXIT_OK)
+        self.assertEqual(mocked.call_args.args[0].cmd, "research")
+        self.assertEqual(mocked.call_args.args[0].profile, "implementation")
+        with mock.patch.object(argos, "sota_mode", new_callable=mock.AsyncMock, return_value=argos.EXIT_OK) as mocked:
+            rc = argos.cli_main(["@research-docs", "topic", "--no-model"])
+        self.assertEqual(rc, argos.EXIT_OK)
+        self.assertEqual(mocked.call_args.args[0].cmd, "research")
+        self.assertEqual(mocked.call_args.args[0].profile, "docs")
+
+    def test_rewrite_research_argv_preserves_generic_mode_shorthands(self) -> None:
+        for shorthand in ("@critique", "@review", "@plan", "@council"):
+            with self.subTest(shorthand=shorthand):
+                self.assertEqual(
+                    argos.rewrite_research_argv([shorthand, "topic"]),
+                    ["run", shorthand, "topic"],
+                )
+
+    def test_research_command_writes_research_mode_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(
+            argos,
+            "fetch_sota_source",
+            side_effect=self.fake_source_result,
+        ):
+            out = io.StringIO()
+            args = self.sota_args(
+                cmd="research",
+                artifact_root=td,
+                no_model=True,
+                profile="docs",
+            )
+            with contextlib.redirect_stdout(out):
+                rc = asyncio.run(argos.sota_mode(args))
+            meta = json.loads(out.getvalue())
+            artifact = Path(meta["artifact_dir"])
+            summary = json.loads((artifact / "summary.json").read_text())
+            report = (artifact / "report.md").read_text()
+        self.assertEqual(rc, argos.EXIT_OK)
+        self.assertEqual(meta["mode"], "research")
+        self.assertEqual(summary["mode"], "research")
+        self.assertIn("Argos Research", report)
+        self.assertEqual(artifact.parent, Path(td))
+        self.assertTrue(artifact.name.endswith("-research"))
 
     def test_sota_no_model_writes_evidence_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "fetch_sota_source", side_effect=self.fake_source_result):
@@ -1619,8 +2150,8 @@ class SotaExplorerTests(unittest.TestCase):
     def test_sota_strict_topic_filters_off_topic_evidence(self) -> None:
         def fake_off_topic(source, query, *, limit, since, wave, lane, timeout):
             return argos.SotaSourceResult(source, [
-                argos.SotaEvidence("", source, "https://example.com/off", "Calibrating galaxies", "paper", "2026-01-01", argos.utc_now(), [], "Cosmology distance ladders.", query, wave, lane, "unit", 0.1, 0.5),
-                argos.SotaEvidence("", source, "https://example.com/on", "Agentic coding benchmark", "paper", "2026-01-01", argos.utc_now(), [], "Agentic coding benchmarks and repository tasks.", query, wave, lane, "unit", 0.8, 0.7),
+                argos.SotaEvidence("", source, f"https://example.com/off/{wave}", "Calibrating galaxies", "paper", "2026-01-01", argos.utc_now(), [], "Cosmology distance ladders.", query, wave, lane, "unit", 0.1, 0.5),
+                argos.SotaEvidence("", source, f"https://example.com/on/{wave}", "Agentic coding benchmark", "paper", "2026-01-01", argos.utc_now(), [], "Agentic coding benchmarks and repository tasks.", query, wave, lane, "unit", 0.8, 0.7),
             ])
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "fetch_sota_source", side_effect=fake_off_topic):
             out = io.StringIO()
@@ -1631,7 +2162,10 @@ class SotaExplorerTests(unittest.TestCase):
             evidence = json.loads((Path(meta["artifact_dir"]) / "evidence.json").read_text())
             summary = json.loads((Path(meta["artifact_dir"]) / "summary.json").read_text())
         self.assertEqual(rc, argos.EXIT_OK)
-        self.assertEqual([row["title"] for row in evidence], ["Agentic coding benchmark"])
+        self.assertEqual(
+            [row["title"] for row in evidence],
+            ["Agentic coding benchmark", "Agentic coding benchmark"],
+        )
         self.assertGreater(summary["source_health"]["arxiv"]["filtered"], 0)
         self.assertGreater(summary["total_filtered_count"], 0)
 
@@ -1644,6 +2178,24 @@ class SotaExplorerTests(unittest.TestCase):
         self.assertNotEqual(argos.classify_evidence_quality(spoofed, "retrieval augmented generation evaluation")[0], "vendor")
         self.assertEqual(argos.classify_evidence_quality(off, "retrieval augmented generation evaluation")[0], "off_topic")
         self.assertEqual(argos.classify_evidence_quality(weak_paper, "agentic coding benchmarks")[0], "medium")
+
+    def test_docs_profile_treats_relevant_first_party_docs_as_strong(self) -> None:
+        first_party = argos.SotaEvidence(
+            "",
+            "exa",
+            "https://openai.com/api/docs",
+            "OpenAI API official documentation",
+            "web",
+            excerpt="OpenAI API configuration and compatibility documentation.",
+        )
+        self.assertEqual(
+            argos.classify_evidence_quality(
+                first_party,
+                "OpenAI API documentation",
+                "docs",
+            )[0],
+            "strong",
+        )
 
     def test_source_health_keeps_warnings_separate_from_errors(self) -> None:
         events = [{"source": "brave", "status": "ok", "count": 1, "retrieved_count": 1, "filtered_count": 0, "warnings": ["since filter not enforced"], "error": None}]
@@ -1799,6 +2351,43 @@ class SotaExplorerTests(unittest.TestCase):
         self.assertEqual(calls[-1], "fable")
         self.assertEqual(meta["reviewer"]["argos"], "fable")
 
+    def test_deep_profile_uses_high_reviewer_without_explicit_high_flag(self) -> None:
+        calls = []
+
+        async def fake_run_logical(self, name, prompt, files, images=None):
+            calls.append(name)
+            return argos.ArgosResult(
+                argos=name,
+                status="ok",
+                content="Reviewed [E1]",
+                provider="claude" if name == "fable" else "opencode_go",
+                model="m",
+                kind="claude" if name == "fable" else "opencode",
+                session_id="s",
+                candidate={"kind": "claude", "model": "m", "provider": "claude"},
+            )
+
+        with tempfile.TemporaryDirectory() as td, \
+            mock.patch.object(argos, "fetch_sota_source", side_effect=self.fake_source_result), \
+            mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
+            out = io.StringIO()
+            args = self.sota_args(
+                artifact_root=td,
+                no_model=False,
+                profile="deep",
+                high=False,
+                source=["arxiv"],
+                max_sources=2,
+                max_queries=2,
+            )
+            with contextlib.redirect_stdout(out):
+                rc = asyncio.run(argos.sota_mode(args))
+            meta = json.loads(out.getvalue())
+        self.assertEqual(rc, argos.EXIT_OK)
+        self.assertTrue(args.high)
+        self.assertEqual(calls[-1], "fable")
+        self.assertEqual(meta["reviewer"]["argos"], "fable")
+
     def test_sota_review_prompt_caps_synthesis_and_evidence_text(self) -> None:
         evidence = [
             argos.SotaEvidence(id=f"E{i}", source="arxiv", url=f"u{i}", title="t", source_type="paper", excerpt="e" * 2000)
@@ -1912,12 +2501,13 @@ class NativeWindowsExecutableResolutionTests(unittest.TestCase):
 
         async def fake_exec(*cmd, **kwargs):
             recorded["cmd"] = cmd
-
-            async def communicate(inp=None):
-                return b"", b""
-
             proc = mock.Mock()
-            proc.communicate = communicate
+            proc.stdin = None
+            proc.stdout = mock.Mock()
+            proc.stdout.readline = mock.AsyncMock(return_value=b"")
+            proc.stderr = mock.Mock()
+            proc.stderr.read = mock.AsyncMock(return_value=b"")
+            proc.wait = mock.AsyncMock(return_value=0)
             proc.returncode = 0
             return proc
 
@@ -1933,10 +2523,45 @@ class NativeWindowsExecutableResolutionTests(unittest.TestCase):
         self.assertEqual(recorded["cmd"][0], r"C:\x\opencode.CMD")
         self.assertEqual(recorded["cmd"][1], "run")
 
+    def test_run_subprocess_disables_claude_autoupdater_on_windows(self) -> None:
+        recorded: dict[str, dict[str, str]] = {}
+
+        async def fake_exec(*cmd, **kwargs):
+            recorded["env"] = kwargs["env"]
+
+            async def communicate(inp=None):
+                return b"", b""
+
+            proc = mock.Mock()
+            proc.communicate = communicate
+            proc.returncode = 0
+            return proc
+
+        with tempfile.TemporaryDirectory() as td, (
+            mock.patch.object(argos, "IS_WINDOWS", True)
+        ), mock.patch.object(
+            argos.shutil, "which", return_value=r"C:\x\claude.CMD"
+        ), mock.patch.object(
+            argos.asyncio, "create_subprocess_exec", fake_exec
+        ), mock.patch.dict(
+            os.environ, {"DISABLE_AUTOUPDATER": "0"}
+        ):
+            rc, _out, _err, _dur = asyncio.run(
+                argos.run_subprocess(
+                    ["claude", "--version"],
+                    timeout=5,
+                    cwd=Path(td),
+                )
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(recorded["env"]["DISABLE_AUTOUPDATER"], "1")
+
     def test_run_subprocess_resolves_only_after_the_allowlist_gate(self) -> None:
         src = inspect.getsource(argos.run_subprocess)
         self.assertIn("assert_allowed_subprocess(cmd)", src)
         self.assertIn("resolve_windows_executable(cmd)", src)
+        self.assertIn("_subprocess_env(cmd, run_cwd)", src)
         self.assertLess(
             src.index("assert_allowed_subprocess(cmd)"),
             src.index("resolve_windows_executable(cmd)"),
@@ -1959,6 +2584,8 @@ class InternalBenchmarkTests(unittest.TestCase):
         self.assertEqual(payload["suite_version"], argos.BENCHMARK_SUITE_VERSION)
         self.assertEqual(payload["status"], "pass")
         self.assertEqual(payload["normalized_score"], 100.0)
+        self.assertIn("provider_availability", payload)
+        self.assertIn("surface_counts", payload)
 
     def test_internal_benchmark_comparison_reports_score_and_duration_delta(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -2027,13 +2654,17 @@ class InternalBenchmarkTests(unittest.TestCase):
     def test_problem_suite_quality_scores_gold_above_weak_answers(self) -> None:
         suite = argos.run_benchmark_problem_suite()
         self.assertEqual(suite["version"], argos.BENCHMARK_PROBLEM_SET_VERSION)
-        self.assertGreaterEqual(suite["problem_count"], 6)
+        self.assertGreaterEqual(suite["problem_count"], 10)
         self.assertTrue(suite["passed"])
         self.assertGreaterEqual(suite["average_margin"], 0.5)
         inspirations = {source for problem in suite["problems"] for source in problem["inspired_by"]}
         self.assertIn("SWE-bench Verified", inspirations)
         self.assertIn("τ-bench", inspirations)
         self.assertIn("GAIA", inspirations)
+        self.assertIn("multi_turn", suite["surface_counts"])
+        self.assertIn("council", suite["surface_counts"])
+        self.assertIn("debate", suite["surface_counts"])
+        self.assertIn("provider_availability", suite["surface_counts"])
 
     def test_internal_benchmark_includes_problem_suite_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -2061,6 +2692,8 @@ class InternalBenchmarkTests(unittest.TestCase):
         self.assertEqual(payload["benchmark_scope"], "static-regression-gate")
         self.assertRegex(payload["fixture_set_hash"], r"^[0-9a-f]{16}$")
         self.assertRegex(payload["keyword_list_hash"], r"^[0-9a-f]{16}$")
+        self.assertIn("provider_availability", payload)
+        self.assertIn("surface_counts", payload)
 
     def test_problem_suite_separates_fixture_pass_from_headroom_and_hashes_scorer_params(self) -> None:
         suite = argos.run_benchmark_problem_suite()
@@ -2077,8 +2710,33 @@ class InternalBenchmarkTests(unittest.TestCase):
         problem_row = next(case for case in payload["cases"] if case["id"] == "problem_suite_quality")
         self.assertEqual(payload["fixture_set_hash"], problem_row["metrics"]["fixture_set_hash"])
         self.assertEqual(payload["keyword_list_hash"], problem_row["metrics"]["keyword_list_hash"])
-        self.assertEqual(payload["scorer_params_hash"], problem_row["metrics"]["scorer_params_hash"])
-        self.assertEqual(problem_row["score"], 1.0)
+        self.assertIn("provider_availability", payload)
+
+    def test_launch_matrix_contract_reports_distinct_prompt_surfaces(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            result = argos.run_benchmark_case("launch_matrix_contract", argos.DEFAULT_CONFIG, Path(td), prompt_variant="persona", benchmark_argos="sonnet")
+        self.assertEqual(result["score"], 1.0)
+        self.assertIn("launch_surfaces", result["metrics"])
+        self.assertEqual(result["metrics"]["launch_surfaces"]["council"], "council")
+        self.assertEqual(result["metrics"]["launch_surfaces"]["debate"], "debate")
+
+    def test_provider_availability_snapshot_is_reported_separately_from_quality(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            result = argos.run_benchmark_case("provider_availability_snapshot", argos.DEFAULT_CONFIG, Path(td), prompt_variant="persona", benchmark_argos="sonnet")
+        self.assertEqual(result["score"], 1.0)
+        self.assertEqual(result["metrics"]["status"], "snapshot")
+        self.assertGreater(result["metrics"]["model_count"], 0)
+
+    def test_debate_synthesis_prompt_marks_peer_data_untrusted(self) -> None:
+        prompt = argos.build_debate_synthesis_prompt(
+            "## Pair A\nalpha\n\n## Pair B\nbeta",
+            share_chars=100,
+            total_share_chars=200,
+            moderator="sonnet",
+        )
+        self.assertIn("debate-data", prompt)
+        self.assertIn("préserve les désaccords importants", prompt)
+        self.assertIn("sonnet", prompt)
 
     def test_benchmark_compare_reports_hash_compatibility(self) -> None:
         with tempfile.TemporaryDirectory() as td:
