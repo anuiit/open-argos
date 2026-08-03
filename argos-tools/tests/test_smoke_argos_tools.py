@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,7 @@ from unittest import mock
 
 SMOKE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "smoke_argos_tools.py"
 ADVERSARIAL_SMOKE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "adversarial_smoke_argos_tools.py"
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("smoke_argos_tools_under_test", SMOKE_PATH)
 assert spec and spec.loader
 smoke = importlib.util.module_from_spec(spec)
@@ -29,6 +31,26 @@ def completed(cmd: list[str], stdout: str, stderr: str = "", rc: int = 0) -> sub
     return subprocess.CompletedProcess(cmd, rc, stdout=stdout, stderr=stderr)
 
 
+class WindowsCommandResolutionTests(unittest.TestCase):
+    def test_smoke_resolves_windows_cmd_shim(self) -> None:
+        with mock.patch.object(smoke, "IS_WINDOWS", True), mock.patch.object(
+            smoke.shutil, "which", return_value=r"C:\Users\test\bin\argos.CMD"
+        ):
+            resolved = smoke.resolve_command(["argos", "doctor"])
+        self.assertEqual(resolved, [r"C:\Users\test\bin\argos.CMD", "doctor"])
+
+    def test_adversarial_smoke_resolves_windows_cmd_shim(self) -> None:
+        with mock.patch.object(adversarial, "IS_WINDOWS", True), mock.patch.object(
+            adversarial.shutil, "which", return_value=r"C:\Users\test\bin\argos.CMD"
+        ):
+            resolved = adversarial.resolve_command(["argos", "ping", "--json"])
+        self.assertEqual(resolved, [r"C:\Users\test\bin\argos.CMD", "ping", "--json"])
+
+    def test_adversarial_smoke_defaults_to_repo_argos_when_available(self) -> None:
+        expected = (Path(__file__).resolve().parents[2] / "argos" / "argos.py").resolve()
+        self.assertEqual(adversarial.DEFAULT_ARGOS_PY, expected)
+
+
 class SmokeAdvToolsTests(unittest.TestCase):
     def run_main(self, argv: list[str], fake_run):
         out = io.StringIO()
@@ -39,6 +61,21 @@ class SmokeAdvToolsTests(unittest.TestCase):
             contextlib.redirect_stderr(err):
             rc = smoke.main()
         return rc, out.getvalue(), err.getvalue()
+
+    def test_council_preauthorizes_relevant_repository_source_egress(self) -> None:
+        council = (PLUGIN_ROOT / "skills" / "argos-council" / "SKILL.md").read_text(
+            encoding="utf-8"
+        ).lower()
+        context_contract = (
+            PLUGIN_ROOT / "references" / "argos-context-contract.md"
+        ).read_text(encoding="utf-8").lower()
+
+        for text in (council, context_contract):
+            self.assertIn("standing authorization", text)
+            self.assertIn("internal, private, proprietary, or unpublished", text)
+            self.assertIn("do not ask", text)
+        self.assertIn("--file", council)
+        self.assertIn("--dir", council)
 
     def test_default_smoke_runs_static_checks_and_gate_only(self) -> None:
         calls: list[list[str]] = []
@@ -97,6 +134,53 @@ class SmokeAdvToolsTests(unittest.TestCase):
         self.assertIn("argos doctor did not return valid JSON", str(raised.exception))
         self.assertIn("stdout tail", str(raised.exception))
 
+    def test_nonzero_doctor_fails_closed_before_other_checks(self) -> None:
+        def fake_run(cmd, **kwargs):
+            if cmd == ["argos", "doctor"]:
+                return completed(
+                    cmd,
+                    json.dumps(
+                        {
+                            "readiness": {
+                                "core_text_argoses": False,
+                                "optional_agy_vision_cli": False,
+                            }
+                        }
+                    ),
+                    rc=2,
+                )
+            self.fail(f"unexpected command after failed doctor: {cmd}")
+
+        with self.assertRaisesRegex(
+            SystemExit, "argos doctor returned 2; core text argos are not ready"
+        ):
+            self.run_main(["--no-gate"], fake_run)
+
+    def test_live_text_requires_core_readiness(self) -> None:
+        def fake_run(cmd, **kwargs):
+            if cmd == ["argos", "doctor"]:
+                return completed(
+                    cmd,
+                    json.dumps(
+                        {
+                            "readiness": {
+                                "core_text_argoses": False,
+                                "optional_agy_vision_cli": True,
+                            }
+                        }
+                    ),
+                )
+            if cmd == ["argos", "ping", "--json"]:
+                return completed(cmd, json.dumps({"status": "ok"}))
+            if cmd == ["argos", "providers", "--json"]:
+                return completed(cmd, json.dumps({"status": "ok"}))
+            self.fail(f"unexpected command: {cmd}")
+
+        with self.assertRaisesRegex(
+            SystemExit, "--live text smoke requires core text argos"
+        ):
+            self.run_main(["--live", "--no-gate"], fake_run)
+
     def test_vision_implies_live_but_does_not_run_text_live_branch(self) -> None:
         calls: list[list[str]] = []
 
@@ -110,19 +194,19 @@ class SmokeAdvToolsTests(unittest.TestCase):
                 return completed(cmd, json.dumps({"status": "ok"}))
             if cmd[:3] == ["argos", "gate", "set"]:
                 return completed(cmd, "ok")
-            if cmd[:3] == ["argos", "@vision", "Identify the two main colors only."]:
+            if cmd[:4] == ["argos", "run", "vision", "Identify the two main colors only."]:
                 return completed(cmd, json.dumps({"status": "ok"}))
             self.fail(f"unexpected command: {cmd}")
 
         with mock.patch.object(smoke, "write_png", lambda path: path.write_bytes(b"png")):
             rc, _out, _err = self.run_main(["--vision"], fake_run)
         self.assertEqual(rc, 0)
-        self.assertTrue(any(cmd[:2] == ["argos", "@vision"] for cmd in calls))
-        self.assertFalse(any(cmd[:2] == ["argos", "@review"] for cmd in calls))
+        self.assertTrue(any(cmd[:3] == ["argos", "run", "vision"] for cmd in calls))
+        self.assertFalse(any(cmd[:3] == ["argos", "run", "review"] for cmd in calls))
 
-    def test_sota_accepts_exit_two_when_artifacts_exist(self) -> None:
+    def test_research_accepts_exit_two_when_artifacts_exist(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            artifact = Path(td) / "sota-artifact"
+            artifact = Path(td) / "research-artifact"
             artifact.mkdir()
             (artifact / "report.md").write_text("report", encoding="utf-8")
 
@@ -135,13 +219,41 @@ class SmokeAdvToolsTests(unittest.TestCase):
                     return completed(cmd, json.dumps({"status": "ok"}))
                 if cmd[:3] == ["argos", "gate", "set"]:
                     return completed(cmd, "ok")
-                if cmd[:2] == ["argos", "sota"]:
-                    return completed(cmd, json.dumps({"mode": "sota", "artifact_dir": str(artifact)}), rc=2)
+                if cmd[:2] == ["argos", "research"]:
+                    return completed(cmd, json.dumps({"mode": "research", "artifact_dir": str(artifact)}), rc=2)
                 self.fail(f"unexpected command: {cmd}")
 
-            rc, out, _err = self.run_main(["--sota"], fake_run)
+            rc, out, _err = self.run_main(["--research"], fake_run)
         self.assertEqual(rc, 0)
         self.assertIn("Argos-Tools smoke: PASS", out)
+
+    def test_research_rejects_crash_even_when_stdout_is_valid_json(self) -> None:
+        def fake_run(cmd, **kwargs):
+            if cmd == ["argos", "doctor"]:
+                return completed(
+                    cmd, json.dumps({"readiness": {"core_text_argoses": True}})
+                )
+            if cmd == ["argos", "ping", "--json"]:
+                return completed(cmd, json.dumps({"status": "ok"}))
+            if cmd == ["argos", "providers", "--json"]:
+                return completed(cmd, json.dumps({"status": "ok"}))
+            if cmd[:2] == ["argos", "research"]:
+                return completed(
+                    cmd,
+                    json.dumps(
+                        {
+                            "mode": "research",
+                            "artifact_dir": "unused-valid-looking-path",
+                        }
+                    ),
+                    rc=1,
+                )
+            self.fail(f"unexpected command: {cmd}")
+
+        with self.assertRaisesRegex(
+            SystemExit, "argos research smoke crashed \\(1\\)"
+        ):
+            self.run_main(["--research", "--no-gate"], fake_run)
 
     def test_adversarial_flag_runs_adversarial_suite_after_static_checks(self) -> None:
         calls: list[list[str]] = []
@@ -165,7 +277,7 @@ class SmokeAdvToolsTests(unittest.TestCase):
         self.assertIn("Argos-Tools smoke: PASS", out)
         self.assertTrue(any(cmd[:2] == [sys.executable, str(ADVERSARIAL_SMOKE_PATH)] for cmd in calls))
 
-    def test_adversarial_sota_live_flag_is_forwarded(self) -> None:
+    def test_adversarial_research_live_flag_is_forwarded(self) -> None:
         calls: list[list[str]] = []
 
         def fake_run(cmd, **kwargs):
@@ -182,10 +294,10 @@ class SmokeAdvToolsTests(unittest.TestCase):
                 return completed(cmd, "ok")
             self.fail(f"unexpected command: {cmd}")
 
-        rc, _out, _err = self.run_main(["--adversarial", "--adversarial-sota-live"], fake_run)
+        rc, _out, _err = self.run_main(["--adversarial", "--adversarial-research-live"], fake_run)
         self.assertEqual(rc, 0)
         adversarial_calls = [cmd for cmd in calls if cmd[:2] == [sys.executable, str(ADVERSARIAL_SMOKE_PATH)]]
-        self.assertEqual(adversarial_calls, [[sys.executable, str(ADVERSARIAL_SMOKE_PATH), "--sota-live"]])
+        self.assertEqual(adversarial_calls, [[sys.executable, str(ADVERSARIAL_SMOKE_PATH), "--research-live"]])
 
     def test_adversarial_argos_py_flag_is_forwarded(self) -> None:
         calls: list[list[str]] = []
@@ -230,6 +342,46 @@ class AdversarialSmokeTests(unittest.TestCase):
             adversarial.parse_json(proc, "bad json")
         self.assertIn("bad json invalid JSON", str(raised.exception))
         self.assertIn("stderr tail", str(raised.exception))
+
+
+class DocCommandShapeTests(unittest.TestCase):
+    def test_argos_plan_skill_has_explicit_workflow_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        skill = root / "skills" / "argos-plan" / "SKILL.md"
+        text = skill.read_text(encoding="utf-8").lower()
+        for needle in (
+            "light",
+            "medium",
+            "high",
+            "plan-only",
+            "argos run plan",
+            "argos run review",
+            "argos run critique",
+            "implementation",
+            "review",
+            "critique",
+            "default to `medium`",
+            "1–3",
+        ):
+            self.assertIn(needle, text)
+        profile_path = root / "references" / "delivery-profiles.md"
+        self.assertTrue(profile_path.is_file(), f"missing {profile_path}")
+
+    def test_one_shot_docs_prefer_shell_neutral_run_forms(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pattern = re.compile(
+            r'argos\s+(?:run\s+)?"?@(review|critique|plan|debug|consensus|ui|vision|star)"?\b'
+        )
+        offending: list[str] = []
+
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in {".md", ".txt"}:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if pattern.search(text):
+                offending.append(str(path.relative_to(root)))
+
+        self.assertEqual(offending, [], f"Found fragile one-shot aliases in: {offending}")
 
 
 if __name__ == "__main__":

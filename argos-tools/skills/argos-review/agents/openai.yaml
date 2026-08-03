@@ -1,0 +1,4 @@
+interface:
+  display_name: "Argos Review"
+  short_description: "Implementation and testability review"
+  default_prompt: "Utilise $argos-review pour une relecture externe pragmatique avant implémentation ou après proposition."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Le Conseil d'Argos"
+  short_description: "Délibération multi-modèle persistante"
+  default_prompt: "Utilise $argos-council pour ouvrir un Conseil d'Argos avec Fable et Kimi 3 sur cette réflexion."

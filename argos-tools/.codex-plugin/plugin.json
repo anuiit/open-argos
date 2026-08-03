@@ -1,25 +1,27 @@
 {
   "name": "argos-tools",
-  "version": "0.2.0+codex.20260721000000",
-  "description": "Codex skills for the local argos CLI, exposed as $argos-xxx commands.",
+  "version": "0.5.1+codex.20260802234335",
+  "description": "Focused Argos workflow skills for Codex: review, critique, planning, council and research.",
   "author": {
     "name": "Local developer"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Argos Tools",
-    "shortDescription": "Use local argos reviews, critiques, vision, SOTA research, config, and gates from Codex.",
-    "longDescription": "Argos Tools exposes the local argos CLI through Codex skills named argos-review, argos-critique, argos-plan, argos-vision, argos-sota, argos-config, argos-doctor, and argos-gate. The SOTA skill supports normal/deep research profiles, with normal as the default, and writes summary.json with source health and quality buckets. The plugin is a lightweight Codex facade; argos itself never launches Codex.",
+    "shortDescription": "Run focused external advisory workflows from one plugin: review, critique, planning, council, and research.",
+    "longDescription": "Argos Tools exposes the local Argos CLI through Codex skills for implementation review, adversarial critique, configurable planning depth, persistent councils, and decision-support research. The plugin is a lightweight facade: Argos executes local workflows and writes auditable artifacts, but never launches Codex.",
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [
       "skills"
     ],
     "defaultPrompt": [
-      "Run $argos-doctor to check argos/plugin readiness before using external argos.",
-      "Run $argos-review on this implementation plan with relevant files.",
-      "Run $argos-critique on this diff and classify blockers vs improvements.",
-      "Run $argos-sota to research the latest source-backed state of a domain."
+      "Run $argos when you want the model to choose the lightest adequate Argos workflow.",
+      "Run $argos-review for implementation/testability checks before coding.",
+      "Run $argos-critique after a concrete proposal to identify blockers and improvements.",
+      "Run $argos-plan with light/medium/high depth when you need planning guidance.",
+      "Run $argos-council for persistent one- or two-partner deliberation on hard decisions.",
+      "Run $argos-research for source-backed, decision-oriented research before committing to a technical direction."
     ]
   }
 }

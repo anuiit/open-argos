@@ -1,0 +1,4 @@
+interface:
+  display_name: "Argos Router"
+  short_description: "Route libre vers les capacités Argos"
+  default_prompt: "Utilise $argos pour choisir et exécuter le workflow Argos adapté à cette tâche."
