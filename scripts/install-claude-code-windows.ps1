@@ -2,13 +2,18 @@
 #   1) global `argos` CLI shim in %USERPROFILE%\bin (added to user PATH)
 #   2) Claude Code skill in %USERPROFILE%\.claude\skills\argos
 #   3) runtime dirs %USERPROFILE%\.argos\{sessions,locks}
-# Usage: powershell -ExecutionPolicy Bypass -File F:\dev\open-argos\scripts\install-claude-code-windows.ps1
+# Usage: powershell -ExecutionPolicy Bypass -File .\scripts\install-claude-code-windows.ps1
+# Optional: -Root C:\src\open-argos (defaults to the repository containing this script)
 # NOTE: ASCII-only on purpose - Windows PowerShell 5.1 misreads UTF-8 without BOM.
+param(
+    [string]$Root = (Split-Path -Parent $PSScriptRoot)
+)
+
 $ErrorActionPreference = "Stop"
 
-$Root = "F:\dev\open-argos"
+$Root = [System.IO.Path]::GetFullPath($Root)
 if (-not (Test-Path (Join-Path $Root "argos\argos.py"))) {
-    throw "open-argos not found at $Root - run the WSL sync first (scripts/migrate-to-argos.sh) or git clone https://github.com/anuiit/open-argos.git"
+    throw "open-argos not found at $Root - pass -Root with the directory created by git clone"
 }
 $py = Get-Command python -ErrorAction SilentlyContinue
 if (-not $py) { throw "python not found in PATH - install Python 3 (python.org or: winget install Python.Python.3.12)" }
@@ -19,9 +24,9 @@ New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 $shim = @(
     '@echo off',
     ('set "ARGOS_ROOT=' + $Root + '"'),
-    'set "ARGOS_CONFIG_DIR=%ARGOS_ROOT%\.config\argos-dev"',
-    'set "ARGOS_ARTIFACT_ROOT=%USERPROFILE%\.argos\sessions"',
-    'set "ARGOS_LOCK_ROOT=%USERPROFILE%\.argos\locks"',
+    'if not defined ARGOS_CONFIG_DIR set "ARGOS_CONFIG_DIR=%ARGOS_ROOT%\.config\argos-dev"',
+    'if not defined ARGOS_ARTIFACT_ROOT set "ARGOS_ARTIFACT_ROOT=%USERPROFILE%\.argos\sessions"',
+    'if not defined ARGOS_LOCK_ROOT set "ARGOS_LOCK_ROOT=%USERPROFILE%\.argos\locks"',
     'python "%ARGOS_ROOT%\argos\argos.py" %*'
 ) -join "`r`n"
 Set-Content -Path (Join-Path $BinDir "argos.cmd") -Value $shim -Encoding ASCII

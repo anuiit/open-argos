@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -181,6 +182,57 @@ class McpRuntimeTests(unittest.TestCase):
         self.assertFalse(result.ready)
         self.assertFalse(run_uv.called)
         self.assertFalse((runtime_root / mcp_runtime.MARKER_NAME).exists())
+
+    def test_run_uv_uses_bounded_timeout_and_normalizes_expiry(self) -> None:
+        with mock.patch.object(
+            mcp_runtime.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(
+                cmd=["uv", "venv"],
+                timeout=mcp_runtime.UV_COMMAND_TIMEOUT_SECONDS,
+            ),
+        ) as run:
+            with self.assertRaisesRegex(
+                mcp_runtime.BootstrapError,
+                rf"uv timed out after {mcp_runtime.UV_COMMAND_TIMEOUT_SECONDS} seconds",
+            ):
+                mcp_runtime._run_uv(("venv",))
+
+        self.assertEqual(
+            run.call_args.kwargs["timeout"],
+            mcp_runtime.UV_COMMAND_TIMEOUT_SECONDS,
+        )
+
+    def test_run_uv_uses_runtime_local_cache_without_overriding_caller(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["uv"], returncode=0, stdout="", stderr=""
+        )
+        cache_dir = Path("C:/writable/runtime-cache")
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(
+                mcp_runtime.subprocess,
+                "run",
+                return_value=completed,
+            ) as run,
+        ):
+            mcp_runtime._run_uv(("venv",), cache_dir=cache_dir)
+        self.assertEqual(run.call_args.kwargs["env"]["UV_CACHE_DIR"], str(cache_dir))
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"UV_CACHE_DIR": "C:/caller/cache"},
+                clear=True,
+            ),
+            mock.patch.object(
+                mcp_runtime.subprocess,
+                "run",
+                return_value=completed,
+            ) as run,
+        ):
+            mcp_runtime._run_uv(("venv",), cache_dir=cache_dir)
+        self.assertEqual(run.call_args.kwargs["env"]["UV_CACHE_DIR"], "C:/caller/cache")
 
     def test_workspace_symlink_or_reparse_is_rejected(self) -> None:
         workspace = self._workspace()

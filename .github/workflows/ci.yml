@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+          - os: ubuntu-latest
+            python: "3.14"
+          - os: windows-latest
+            python: "3.12"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test tools
+        run: python -m pip install --disable-pip-version-check pytest ruff "mcp==2.0.0"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Compile
+        run: python -m compileall -q argos
+      - name: Test
+        run: python -m pytest -q
+
+  package:
+    name: Build and clean-install
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build wheel and source archive
+        run: |
+          python -m pip install --disable-pip-version-check build
+          python -m build
+          python scripts/verify_distribution.py dist
+      - name: Install wheel without repository files
+        run: |
+          python -m venv /tmp/open-argos-smoke
+          /tmp/open-argos-smoke/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
+          /tmp/open-argos-smoke/bin/argos --version
+          /tmp/open-argos-smoke/bin/python -c "import argos.mcp_launcher; import argos.mcp_runtime"

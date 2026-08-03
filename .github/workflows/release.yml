@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Require public release metadata
+        run: |
+          test -f LICENSE || { echo "::error::Choose and add a project LICENSE before publishing."; exit 1; }
+      - name: Verify tag matches the product version
+        if: github.ref_type == 'tag'
+        shell: python
+        run: |
+          import os
+          from argos import VERSION
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          expected = f"v{VERSION}"
+          if tag != expected:
+              raise SystemExit(f"tag {tag!r} does not match {expected!r}")
+      - name: Install release tools
+        run: python -m pip install --disable-pip-version-check build pytest ruff "mcp==2.0.0"
+      - name: Run release gate
+        run: |
+          python -m ruff check .
+          python -m compileall -q argos
+          python -m pytest -q
+      - name: Build distributions
+        run: |
+          python -m build
+          python scripts/verify_distribution.py dist
+      - name: Smoke-test wheel
+        run: |
+          python -m venv /tmp/open-argos-release-smoke
+          /tmp/open-argos-release-smoke/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
+          /tmp/open-argos-release-smoke/bin/argos --version
+          /tmp/open-argos-release-smoke/bin/python -c "import argos.mcp_launcher; import argos.mcp_runtime"
+      - name: Write checksums
+        run: sha256sum dist/* > SHA256SUMS
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/*
+            SHA256SUMS

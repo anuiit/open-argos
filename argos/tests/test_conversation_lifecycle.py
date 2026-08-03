@@ -77,7 +77,21 @@ def conversation_args(root: str, **overrides: object) -> object:
     return type("Args", (), defaults)()
 
 
-class DirectoryCliTests(unittest.TestCase):
+class IsolatedRuntimeRootsTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        runtime_root = tempfile.TemporaryDirectory()
+        self.addCleanup(runtime_root.cleanup)
+        lock_root_patch = mock.patch.object(
+            argos,
+            "DEFAULT_LOCK_ROOT",
+            Path(runtime_root.name) / "locks",
+        )
+        lock_root_patch.start()
+        self.addCleanup(lock_root_patch.stop)
+
+
+class DirectoryCliTests(IsolatedRuntimeRootsTestCase):
     def test_argos_loads_its_bundled_context_module_by_exact_path(self) -> None:
         self.assertEqual(argos.expand_context_inputs.__module__, "_argos_context_inputs")
 
@@ -265,7 +279,7 @@ class DirectoryCliTests(unittest.TestCase):
         self.assertIn("… [prompt truncated to 10 chars]", prompt)
 
 
-class LifecycleTests(unittest.TestCase):
+class LifecycleTests(IsolatedRuntimeRootsTestCase):
     def _start(self, root: str, run_logical: object | None = None, expected_code: int = argos.EXIT_OK) -> str:
         async def default_run(self: object, name: str, prompt: str, files: object, images: object = None) -> argos.ArgosResult:
             return persistent_result(name)
@@ -274,6 +288,142 @@ class LifecycleTests(unittest.TestCase):
         with mock.patch.object(argos.Runner, "run_logical", run_logical or default_run), contextlib.redirect_stdout(output):
             self.assertEqual(asyncio.run(argos.start_mode(conversation_args(root))), expected_code)
         return json.loads(output.getvalue())["session_id"]
+
+    def test_load_session_normalizes_truncated_durable_state_error(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sdir = Path(td) / "adv_20260803T120000_deadbeef"
+            sdir.mkdir()
+            (sdir / "session.json").write_text('{"id":', encoding="utf-8")
+
+            with self.assertRaises(SystemExit) as raised:
+                argos.load_session(sdir)
+
+        self.assertIn("session.json", str(raised.exception))
+        self.assertIn("malformed JSON", str(raised.exception))
+        self.assertNotIsInstance(raised.exception, json.JSONDecodeError)
+
+    def test_start_rejects_unwritable_artifact_root_before_creating_session(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "blocked-artifacts"
+            original_mkdir = Path.mkdir
+
+            def deny_artifact_root(path: Path, *args: object, **kwargs: object) -> None:
+                if path == root or root in path.parents:
+                    raise PermissionError("denied by sandbox")
+                original_mkdir(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(argos.Path, "mkdir", deny_artifact_root),
+                mock.patch.object(argos.Runner, "run_logical") as run_logical,
+                self.assertRaises(SystemExit) as raised,
+            ):
+                asyncio.run(argos.start_mode(conversation_args(str(root))))
+
+            message = str(raised.exception)
+            self.assertIn("artifact root", message.lower())
+            self.assertIn("--artifact-root", message)
+            self.assertIn("ARGOS_ARTIFACT_ROOT", message)
+            self.assertFalse(root.exists())
+            run_logical.assert_not_called()
+
+    def test_start_rejects_unwritable_lock_root_before_creating_session(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            artifact_root = base / "artifacts"
+            lock_root = base / "blocked-locks"
+            original_mkdir = Path.mkdir
+            provider_called = False
+
+            def deny_lock_root(path: Path, *args: object, **kwargs: object) -> None:
+                if path == lock_root or lock_root in path.parents:
+                    raise PermissionError("denied by sandbox")
+                original_mkdir(path, *args, **kwargs)
+
+            async def guarded_run_logical(
+                self: object,
+                name: str,
+                prompt: str,
+                files: object,
+                images: object = None,
+            ) -> argos.ArgosResult:
+                nonlocal provider_called
+                provider_called = True
+                async with argos.CrossProcessSlots(
+                    self.cfg,
+                    [("global", 1)],
+                ):
+                    return persistent_result(name)
+
+            args = conversation_args(
+                str(artifact_root),
+                argoses=["sonnet"],
+                single_ok=True,
+            )
+            with (
+                mock.patch.object(argos, "DEFAULT_LOCK_ROOT", lock_root),
+                mock.patch.object(argos.Path, "mkdir", deny_lock_root),
+                mock.patch.object(argos.Runner, "run_logical", guarded_run_logical),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                asyncio.run(argos.start_mode(args))
+
+            message = str(raised.exception)
+            self.assertIn("lock root", message.lower())
+            self.assertIn("ARGOS_LOCK_ROOT", message)
+            self.assertEqual(list(artifact_root.glob("adv_*")), [])
+            self.assertFalse(provider_called)
+
+    def test_ask_rejects_context_before_marking_turn_active(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sid = self._start(td)
+            context_file = Path(td) / "oversized.txt"
+            context_file.write_text("context exceeds the turn limit", encoding="utf-8")
+            args = conversation_args(
+                td,
+                session_id=sid,
+                argoses=None,
+                file=[str(context_file)],
+                max_file_chars=5,
+            )
+
+            with self.assertRaisesRegex(SystemExit, "exceeds"):
+                asyncio.run(argos.ask_mode(args))
+
+            session = argos.load_session(Path(td) / sid)
+            self.assertEqual(session["turn"], 1)
+            self.assertIsNone(session["active_turn"])
+
+    def test_ask_rejects_unwritable_lock_root_before_marking_turn_active(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            sid = self._start(td)
+            lock_root = Path(td) / "blocked-locks"
+            original_mkdir = Path.mkdir
+            provider_called = False
+
+            def deny_lock_root(path: Path, *args: object, **kwargs: object) -> None:
+                if path == lock_root or lock_root in path.parents:
+                    raise PermissionError("denied by sandbox")
+                original_mkdir(path, *args, **kwargs)
+
+            async def unexpected_run_locked(*args: object, **kwargs: object) -> argos.ArgosResult:
+                nonlocal provider_called
+                provider_called = True
+                return persistent_result("sonnet")
+
+            args = conversation_args(td, session_id=sid, argoses=None)
+            with (
+                mock.patch.object(argos, "DEFAULT_LOCK_ROOT", lock_root),
+                mock.patch.object(argos.Path, "mkdir", deny_lock_root),
+                mock.patch.object(argos.Runner, "run_locked", unexpected_run_locked),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                asyncio.run(argos.ask_mode(args))
+
+            self.assertIn("ARGOS_LOCK_ROOT", str(raised.exception))
+            session = argos.load_session(Path(td) / sid)
+            self.assertEqual(session["turn"], 1)
+            self.assertIsNone(session["active_turn"])
+            self.assertFalse(provider_called)
 
     def test_history_rename_export_end_and_reopen(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -643,7 +793,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn("Legacy session", rendered)
 
 
-class CouncilSharedSynthesisTests(unittest.TestCase):
+class CouncilSharedSynthesisTests(IsolatedRuntimeRootsTestCase):
     def test_published_synthesis_is_persisted_and_shared_on_next_turn(self) -> None:
         seen_locked_prompts: list[str] = []
 
@@ -847,7 +997,7 @@ class CouncilSharedSynthesisTests(unittest.TestCase):
             self.assertIsNone(argos.load_session(sdir)["active_turn"])
 
 
-class DebateTests(unittest.TestCase):
+class DebateTests(IsolatedRuntimeRootsTestCase):
     def test_debate_is_bounded_cross_shares_and_synthesizes(self) -> None:
         calls: list[tuple[str, str, str]] = []
 

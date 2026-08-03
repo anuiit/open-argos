@@ -26,7 +26,7 @@ skill invocation remains `$argos-council`.
 - Codex CLI or Codex app with plugin support.
 - `argos` installed and available on `PATH` in the same environment where Codex runs.
 - Provider CLIs used by argos, including `claude`, `opencode`, the official `kimi` CLI, and optional `agy`/Antigravity vision tooling, must be installed, authenticated, and available in that same execution environment. Kimi is pinned to provider `kimi` and model `kimi-code/k3`.
-- Argos version `>= 0.9.0` is required for the neutral Council mode. Version `0.8.0` introduced safe `--dir` context, conversation lifecycle commands, bounded debates, native Windows compatibility helpers, `--prompt-file`, and the source-backed research pipeline.
+- Argos `0.9.0-rc1` or newer is required for the neutral Council mode. Version `0.8.0` introduced safe `--dir` context, conversation lifecycle commands, bounded debates, native Windows compatibility helpers, `--prompt-file`, and the source-backed research pipeline.
 - Argos injects a baseline no-tools/no-nested-argos prompt contract. Review-like modes also receive normalized review sections (`Blockers`, `Important issues`, `Preferences`, `Minimal fix plan`); `council` intentionally uses a neutral conversational contract instead.
 Windows note: argos `>= 0.6.0` includes native Windows process-group and file-lock compatibility. `argos doctor` reports whether a successful live run has validated the current host. Process snapshots remain limited without `/proc`; WSL is still useful when provider CLIs or credentials live in Linux.
 
@@ -113,6 +113,9 @@ Keep one canonical source of truth, preferably in Git. Do not edit Codex's insta
   context relevant to the task, including internal source code, to every
   selected provider without a separate confirmation prompt. Explicit user
   exclusions and deterministic credential/binary/transport checks still win.
+- Select the smallest useful context. Do not attach the repository root when a
+  focused source/test/doc set is sufficient; benchmark corpora, generated
+  results, local agent state, and historical logs remain excluded by default.
 - Codex should prefer argos presets unless a single-model targeted smoke/debug was explicitly requested.
 - If argos returns `needs_human`, stop and surface the blocker to the user; do not auto-retry or silently fall back.
 - Always report argos artifact paths when argos is used.

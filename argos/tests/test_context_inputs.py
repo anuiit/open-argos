@@ -107,6 +107,16 @@ class ContextExpansionTests(unittest.TestCase):
             argos_store = root / ".argos"
             argos_store.mkdir()
             (argos_store / "session.json").write_text("private", encoding="utf-8")
+            benchmark_store = root / "benchmarks"
+            benchmark_store.mkdir()
+            (benchmark_store / "historical-case.md").write_text(
+                "large internal corpus", encoding="utf-8"
+            )
+            omc_store = root / ".omc"
+            omc_store.mkdir()
+            (omc_store / "RELEASE_RULE.md").write_text(
+                "local orchestration state", encoding="utf-8"
+            )
             (root / ".env.production").write_text("TOKEN=secret", encoding="utf-8")
             (root / "private.pem").write_text("secret", encoding="utf-8")
             (root / "cloud-credentials-prod.json").write_text("secret", encoding="utf-8")
@@ -124,6 +134,8 @@ class ContextExpansionTests(unittest.TestCase):
             }
             self.assertIn(("node_modules", "denied_directory"), reasons)
             self.assertIn((".argos", "denied_directory"), reasons)
+            self.assertIn(("benchmarks", "denied_directory"), reasons)
+            self.assertIn((".omc", "denied_directory"), reasons)
             self.assertIn((".env.production", "secret_pattern"), reasons)
             self.assertIn(("private.pem", "secret_pattern"), reasons)
             self.assertIn(("cloud-credentials-prod.json", "secret_pattern"), reasons)

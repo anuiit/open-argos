@@ -321,8 +321,9 @@ Prepare the pinned runtime once, then use the returned absolute paths so host
 working-directory changes cannot select another script:
 
 ```powershell
-$runtime = uv run python F:\dev\open-argos\argos\mcp_runtime.py `
-  --workspace F:\dev\open-argos `
+$repo = (Resolve-Path ".").Path
+$runtime = uv run python (Join-Path $repo "argos\mcp_runtime.py") `
+  --workspace $repo `
   --json | ConvertFrom-Json
 $mcpPython = $runtime.runtime_python
 $mcpServer = $runtime.server_path
@@ -334,7 +335,7 @@ Local scope:
 
 ```powershell
 claude mcp add argos --scope local `
-  -e ARGOS_WORKSPACE=F:\dev\open-argos `
+  -e ARGOS_WORKSPACE=$repo `
   -- $mcpPython $mcpServer
 claude mcp get argos
 
@@ -352,10 +353,10 @@ Claude Code project-server approval:
   "mcpServers": {
     "argos": {
       "type": "stdio",
-      "command": "C:\\Users\\anmou\\AppData\\Local\\open-argos\\runtimes\\mcp-2.0.0-py311\\Scripts\\python.exe",
-      "args": ["F:\\dev\\open-argos\\argos\\mcp_server.py"],
+      "command": "C:\\path\\returned-by-bootstrap\\python.exe",
+      "args": ["C:\\path\\to\\open-argos\\argos\\mcp_server.py"],
       "env": {
-        "ARGOS_WORKSPACE": "F:\\dev\\open-argos"
+        "ARGOS_WORKSPACE": "C:\\path\\to\\your-workspace"
       }
     }
   }
@@ -377,7 +378,7 @@ Local CLI registration:
 
 ```powershell
 codex mcp add argos `
-  --env ARGOS_WORKSPACE=F:\dev\open-argos `
+  --env ARGOS_WORKSPACE=$repo `
   -- $mcpPython $mcpServer
 codex mcp get argos
 ```
@@ -386,9 +387,9 @@ Equivalent trusted project configuration in `.codex/config.toml`:
 
 ```toml
 [mcp_servers.argos]
-command = "C:\\Users\\anmou\\AppData\\Local\\open-argos\\runtimes\\mcp-2.0.0-py311\\Scripts\\python.exe"
-args = ["F:\\dev\\open-argos\\argos\\mcp_server.py"]
-cwd = "F:\\dev\\open-argos"
+command = "C:\\path\\returned-by-bootstrap\\python.exe"
+args = ["C:\\path\\to\\open-argos\\argos\\mcp_server.py"]
+cwd = "C:\\path\\to\\open-argos"
 startup_timeout_sec = 120
 tool_timeout_sec = 180
 

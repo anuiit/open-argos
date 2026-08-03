@@ -55,7 +55,21 @@ def acp_jsonl(*, session_id: str = "session-k3", text: str = "answer") -> str:
     return "\n".join(json.dumps(message) for message in messages) + "\n"
 
 
-class KimiConfigTests(unittest.TestCase):
+class IsolatedRuntimeRootsTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        runtime_root = tempfile.TemporaryDirectory()
+        self.addCleanup(runtime_root.cleanup)
+        lock_root_patch = mock.patch.object(
+            argos,
+            "DEFAULT_LOCK_ROOT",
+            Path(runtime_root.name) / "locks",
+        )
+        lock_root_patch.start()
+        self.addCleanup(lock_root_patch.stop)
+
+
+class KimiConfigTests(IsolatedRuntimeRootsTestCase):
     def test_defaults_route_both_kimi_names_directly_to_kimi_k3(self) -> None:
         self.assertEqual(argos.DEFAULT_CONFIG["models"]["kimi"], [KIMI_CANDIDATE])
         self.assertEqual(argos.DEFAULT_CONFIG["models"]["kimi3"], [KIMI_CANDIDATE])
@@ -126,7 +140,7 @@ class KimiConfigTests(unittest.TestCase):
         self.assertEqual(argos.tool_for_candidate(KIMI_CANDIDATE), "kimi")
 
 
-class KimiTransportTests(unittest.TestCase):
+class KimiTransportTests(IsolatedRuntimeRootsTestCase):
     def test_private_agent_disables_tools_and_command_never_contains_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             agent_file = argos.stage_kimi_agent(Path(td))
@@ -187,7 +201,7 @@ class KimiTransportTests(unittest.TestCase):
                     argos.resolve_kimi_executable(["kimi", "acp"], cwd)
 
 
-class KimiParserTests(unittest.TestCase):
+class KimiParserTests(IsolatedRuntimeRootsTestCase):
     def test_parser_collects_text_session_and_unknown_cost(self) -> None:
         content, meta = argos.parse_kimi_acp(acp_jsonl(text="hello world"))
         self.assertEqual(content, "hello world")
@@ -272,7 +286,7 @@ class KimiParserTests(unittest.TestCase):
             )
 
 
-class KimiRunnerTests(unittest.TestCase):
+class KimiRunnerTests(IsolatedRuntimeRootsTestCase):
     def test_runner_uses_acp_and_preserves_session_id(self) -> None:
         async def fake_run(*args: object, **kwargs: object) -> tuple[int, str, str, float]:
             self.assertEqual(kwargs["provider_session_id"], "session-k3")

@@ -24,9 +24,14 @@ if str(MODULE_DIR) not in sys.path:
 from mcp.server import MCPServer  # noqa: E402
 from mcp.types import ToolAnnotations  # noqa: E402
 
-import argos as argos_core  # type: ignore[import-not-found]  # noqa: E402
-import mcp_adapter  # noqa: E402
-import mcp_contract as contract  # noqa: E402
+if __package__:  # Installed package path.
+    from . import argos as argos_core  # type: ignore[no-redef]  # noqa: E402
+    from . import mcp_adapter  # type: ignore[no-redef]  # noqa: E402
+    from . import mcp_contract as contract  # type: ignore[no-redef]  # noqa: E402
+else:  # Source-tree script/test path.
+    import argos as argos_core  # type: ignore[import-not-found,no-redef]  # noqa: E402
+    import mcp_adapter  # type: ignore[no-redef]  # noqa: E402
+    import mcp_contract as contract  # type: ignore[no-redef]  # noqa: E402
 
 
 def _context_payload(

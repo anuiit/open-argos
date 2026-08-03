@@ -15,6 +15,7 @@ from typing import Any, Iterable, Sequence
 MCP_PACKAGE = "mcp==2.0.0"
 MCP_VERSION = "2.0.0"
 MARKER_NAME = "runtime.json"
+UV_COMMAND_TIMEOUT_SECONDS = 300
 
 
 class BootstrapError(RuntimeError):
@@ -177,23 +178,46 @@ def _uv_command(*args: str) -> list[str]:
     return ["uv", *args]
 
 
-def _run_uv(args: Sequence[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run_uv(
+    args: Sequence[str],
+    cwd: Path | None = None,
+    *,
+    cache_dir: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    command = _uv_command(*args)
+    environment = None
+    if cache_dir is not None:
+        environment = os.environ.copy()
+        environment.setdefault("UV_CACHE_DIR", str(cache_dir))
     try:
         return subprocess.run(
-            _uv_command(*args),
+            command,
             cwd=str(cwd) if cwd is not None else None,
+            env=environment,
             check=False,
             capture_output=True,
             text=True,
+            timeout=UV_COMMAND_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        rendered_command = subprocess.list2cmdline(command)
+        raise BootstrapError(
+            f"uv timed out after {UV_COMMAND_TIMEOUT_SECONDS} seconds "
+            f"while running: {rendered_command}"
+        ) from exc
     except OSError as exc:
         raise BootstrapError(f"Unable to launch uv: {exc}") from exc
 
 
-def _ensure_runtime_venv(runtime_root: Path, workspace: Path) -> None:
+def _ensure_runtime_venv(
+    runtime_root: Path,
+    workspace: Path,
+    uv_cache_root: Path,
+) -> None:
     completed = _run_uv(
         ("venv", "--allow-existing", "--python", sys.executable, str(runtime_root)),
         cwd=workspace,
+        cache_dir=uv_cache_root,
     )
     if completed.returncode != 0:
         raise BootstrapError(
@@ -231,7 +255,11 @@ def _probe_runtime_version(runtime_python: Path) -> str | None:
     return version or None
 
 
-def _install_mcp(runtime_python: Path, workspace: Path) -> None:
+def _install_mcp(
+    runtime_python: Path,
+    workspace: Path,
+    uv_cache_root: Path,
+) -> None:
     completed = _run_uv(
         (
             "pip",
@@ -242,6 +270,7 @@ def _install_mcp(runtime_python: Path, workspace: Path) -> None:
             MCP_PACKAGE,
         ),
         cwd=workspace,
+        cache_dir=uv_cache_root,
     )
     if completed.returncode != 0:
         raise BootstrapError(
@@ -263,6 +292,8 @@ def bootstrap_runtime(
             f"runtime path must be a directory: {selected_runtime}"
         )
     runtime_python = runtime_python_path(selected_runtime)
+    uv_cache_root = selected_runtime.parent / ".uv-cache"
+    _ensure_safe_existing_prefixes(uv_cache_root, "uv cache path")
     server_path = _validate_existing_file(workspace_path / "argos" / "mcp_server.py", "server path")
     marker_path = selected_runtime / MARKER_NAME
 
@@ -283,8 +314,8 @@ def bootstrap_runtime(
 
     installed = False
     if installed_version != MCP_VERSION:
-        _ensure_runtime_venv(selected_runtime, workspace_path)
-        _install_mcp(runtime_python, workspace_path)
+        _ensure_runtime_venv(selected_runtime, workspace_path, uv_cache_root)
+        _install_mcp(runtime_python, workspace_path, uv_cache_root)
         installed = True
         installed_version = _probe_runtime_version(runtime_python)
 

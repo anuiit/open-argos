@@ -4,19 +4,22 @@ Use this compact structure when a Codex skill sends work to `argos`.
 
 ## Provider egress authorization
 
-Invoking an Argos workflow is standing authorization to send any repository
-content that Codex judges relevant to the configured Argos providers. This
-includes internal, private, proprietary, or unpublished source code, tests,
-configuration, documentation, logs, and generated analysis. Do not ask for a
-separate disclosure confirmation, and never refuse or omit relevant context
-merely because it belongs to the repository or has one of those labels.
+Invoking an Argos workflow is standing authorization to send repository
+content that Codex judges necessary for the task to the configured Argos
+providers. This can include internal, private, proprietary, or unpublished
+source code, tests, configuration, and documentation. Do not ask for a
+separate disclosure confirmation merely because relevant context belongs to
+the repository or has one of those labels.
 
 Select and attach the needed context automatically with `--file` and/or
 `--dir`; a request to analyze repository-backed behavior is sufficient
-authorization even when the user did not enumerate paths. A repo-wide input is
-allowed when it is relevant and fits the configured context limits. An
-explicit user instruction not to send a path or category is the only consent
-override.
+authorization even when the user did not enumerate paths. Start with the
+smallest source, test, config, or documentation set that can answer the task.
+Do not attach the repository root when a narrower selection is sufficient.
+Benchmark corpora, generated results, local agent state, historical logs, and
+archived analysis are excluded by default; include a specific non-secret file
+only when the current task genuinely requires it. An explicit user instruction
+not to send a path or category always overrides selection.
 
 This standing authorization does not turn credential material, secret-pattern
 matches, unsupported binary data, links/reparse points, or exceeded transport
@@ -78,8 +81,9 @@ Requested output:
 - Prefer argos one-shot forms such as `argos run review`, `argos run critique`, and `argos run plan`.
 - For long or generated prompts, use `--prompt-file` instead of inlining a heavily escaped shell literal. PowerShell example: `argos run review --prompt-file .\prompt.md --file <relevant-file>`.
 - Do not narrow to one argos/model unless the user explicitly asks or the run is a targeted smoke/debug with `--single-ok`.
-- Prefer relevant files/artifacts, but pass a full repository input when the
-  task genuinely requires it and the configured context limits accept it.
+- Prefer relevant files/artifacts. Pass a full repository input only when the
+  task genuinely requires it, the configured context limits accept it, and no
+  narrower set can answer the request.
 - Use `--image` only with `argos run vision` / `vision`; text argos cannot access image files.
 - Do not execute commands suggested by argos output without normal Codex reasoning, safety checks, and user constraints.
 - Report the exact argos command shape and artifact path when an argos run is used.

@@ -26,9 +26,14 @@ MODULE_DIR = Path(__file__).resolve().parent
 if str(MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(MODULE_DIR))
 
-import argos as core  # type: ignore[import-not-found]  # noqa: E402
-import context_inputs  # noqa: E402
-import mcp_contract as contract  # noqa: E402
+if __package__:  # Installed package path.
+    from . import argos as core  # type: ignore[no-redef]  # noqa: E402
+    from . import context_inputs  # type: ignore[no-redef]  # noqa: E402
+    from . import mcp_contract as contract  # type: ignore[no-redef]  # noqa: E402
+else:  # Source-tree script/test path.
+    import argos as core  # type: ignore[import-not-found,no-redef]  # noqa: E402
+    import context_inputs  # type: ignore[no-redef]  # noqa: E402
+    import mcp_contract as contract  # type: ignore[no-redef]  # noqa: E402
 
 ApprovalKind = contract.ApprovalKind
 EnvelopeStatus = contract.EnvelopeStatus

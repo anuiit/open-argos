@@ -225,8 +225,9 @@ pas la recette hôte, car son cold start peut dépasser leurs timeouts.
 Bootstrap commun:
 
 ```powershell
-$runtime = uv run python F:\dev\open-argos\argos\mcp_runtime.py `
-  --workspace F:\dev\open-argos `
+$repo = (Resolve-Path ".").Path
+$runtime = uv run python (Join-Path $repo "argos\mcp_runtime.py") `
+  --workspace $repo `
   --json | ConvertFrom-Json
 ```
 
@@ -234,7 +235,7 @@ Claude Code:
 
 ```powershell
 claude mcp add argos --scope local `
-  -e ARGOS_WORKSPACE=F:\dev\open-argos `
+  -e ARGOS_WORKSPACE=$repo `
   -- $runtime.runtime_python $runtime.server_path
 claude mcp get argos
 
@@ -248,7 +249,7 @@ Codex:
 
 ```powershell
 codex mcp add argos `
-  --env ARGOS_WORKSPACE=F:\dev\open-argos `
+  --env ARGOS_WORKSPACE=$repo `
   -- $runtime.runtime_python $runtime.server_path
 codex mcp get argos
 ```
@@ -288,6 +289,6 @@ variable, ils conservent volontairement le fallback PEP 723 portable.
 ## Risques connus / axes futurs
 
 - `argos/argos.py` est encore un gros fichier unique: les prochaines features devraient extraire progressivement config, runner, sessions, SOTA, CLI parser, et provider adapters.
-- La parité Windows native est désormais assurée (kill d'arborescence de processus via `taskkill /F /T`, wrappers `.cmd`/`.ps1`); le miroir Windows vit dans `F:\dev\open-argos`.
+- La parité Windows native est désormais assurée (kill d'arborescence de processus via `taskkill /F /T`, wrappers `.cmd`/`.ps1`); aucun emplacement local particulier n'est requis.
 - Le smoke live peut consommer des tokens; le mode par défaut reste statique/non-payant.
 - Les snapshots de processus provider sont précis sur `/proc`, limités sur plateformes sans `/proc`.

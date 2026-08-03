@@ -9,7 +9,8 @@ description: Run the local open-argos CLI for external reviews, critique, planni
 
 ## Invocation
 
-- Windows: `argos` (shim installed by `scripts/install-claude-code-windows.ps1`, core at `F:\dev\open-argos`).
+- Windows: `argos` (package entrypoint, or the shim installed by
+  `scripts/install-claude-code-windows.ps1` from any clone location).
 - WSL/Linux dev copy: `./bin/argos-dev` from the repo root.
 - Codex and Claude Code can share the same plugin source (`plugins/argos-tools`) and
   the same `argos` executable when they run in the same environment.

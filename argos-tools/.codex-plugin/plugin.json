@@ -1,16 +1,16 @@
 {
   "name": "argos-tools",
-  "version": "0.5.1+codex.20260802234335",
+  "version": "0.5.2-rc.1",
   "description": "Focused Argos workflow skills for Codex: review, critique, planning, council and research.",
   "author": {
-    "name": "Local developer"
+    "name": "open-argos contributors"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Argos Tools",
     "shortDescription": "Run focused external advisory workflows from one plugin: review, critique, planning, council, and research.",
     "longDescription": "Argos Tools exposes the local Argos CLI through Codex skills for implementation review, adversarial critique, configurable planning depth, persistent councils, and decision-support research. The plugin is a lightweight facade: Argos executes local workflows and writes auditable artifacts, but never launches Codex.",
-    "developerName": "Local developer",
+    "developerName": "open-argos contributors",
     "category": "Productivity",
     "capabilities": [
       "skills"

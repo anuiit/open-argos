@@ -42,6 +42,20 @@ from pathlib import Path
 from pathlib import PureWindowsPath
 from typing import Any
 
+try:
+    from ._version import VERSION, __version__
+except ImportError:  # Direct script execution keeps the source-tree entrypoint working.
+    _version_spec = importlib.util.spec_from_file_location(
+        "_argos_version",
+        Path(__file__).resolve().with_name("_version.py"),
+    )
+    if not _version_spec or not _version_spec.loader:
+        raise ImportError("Could not load the bundled version module")
+    _version_module = importlib.util.module_from_spec(_version_spec)
+    _version_spec.loader.exec_module(_version_module)
+    VERSION = _version_module.VERSION
+    __version__ = _version_module.__version__
+
 _context_spec = importlib.util.spec_from_file_location(
     "_argos_context_inputs",
     Path(__file__).resolve().with_name("context_inputs.py"),
@@ -54,7 +68,6 @@ _context_spec.loader.exec_module(_context_module)
 ContextInputError = _context_module.ContextInputError
 expand_context_inputs = _context_module.expand_context_inputs
 
-VERSION = "0.9.0"
 IS_WINDOWS = os.name == "nt"
 # signal.SIGKILL is POSIX-only; on Windows terminate_process_group() routes to
 # _windows_kill_tree() and ignores the signal, so any sentinel value is safe.
@@ -683,6 +696,55 @@ def secure_mkdir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     if not IS_WINDOWS:
         os.chmod(path, 0o700)
+
+
+class DurableStateError(RuntimeError):
+    """Raised when persisted Argos state cannot be read safely."""
+
+
+def load_durable_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    """Read a persisted JSON object without leaking decoder tracebacks."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise DurableStateError(f"{label} is unreadable: {path}: {exc}") from None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise DurableStateError(
+            f"{label} contains malformed JSON: {path} "
+            f"(line {exc.lineno}, column {exc.colno})"
+        ) from None
+    if not isinstance(payload, dict):
+        raise DurableStateError(f"{label} must be a JSON object: {path}")
+    return payload
+
+
+def require_writable_directory(
+    path: Path,
+    *,
+    label: str,
+    remediation: str,
+) -> Path:
+    """Validate a runtime root before persistent state is created beneath it."""
+    probe_dir = path / f".argos-write-probe-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    probe_file = probe_dir / "probe"
+    try:
+        secure_mkdir(path)
+        probe_dir.mkdir(mode=0o700)
+        with probe_file.open("xb"):
+            pass
+        probe_file.unlink()
+        probe_dir.rmdir()
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            probe_file.unlink()
+        with contextlib.suppress(OSError):
+            probe_dir.rmdir()
+        raise SystemExit(
+            f"{label} is unavailable or not writable: {path}: {exc}. {remediation}"
+        ) from exc
+    return path
 
 
 def atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
@@ -2882,6 +2944,10 @@ async def acquire_candidate_semaphores(
             semaphore.release()
 
 
+class RuntimeStorageError(RuntimeError):
+    """Raised inside provider tasks when runtime storage becomes unavailable."""
+
+
 class CrossProcessSlots:
     """Small flock-based semaphore shared by independent argos processes."""
 
@@ -2919,7 +2985,14 @@ class CrossProcessSlots:
         while True:
             for slot in range(limit):
                 path = self._lock_root / f"{token}.{slot}.lock"
-                handle = path.open("a+b")
+                try:
+                    handle = path.open("a+b")
+                except OSError as exc:
+                    raise RuntimeStorageError(
+                        "Canonical cross-process lock root is unavailable or "
+                        f"not writable: {self._lock_root}: {exc}. Set "
+                        "ARGOS_LOCK_ROOT to a writable directory."
+                    ) from exc
                 try:
                     file_lock_exclusive(handle, blocking=False)
                 except BlockingIOError:
@@ -2952,9 +3025,10 @@ class CrossProcessSlots:
 def _select_lock_root(preferred: Path) -> Path:
     try:
         secure_mkdir(preferred)
-    except Exception as exc:
-        raise SystemExit(
-            f"Canonical cross-process lock root is unavailable: {preferred}: {exc}"
+    except OSError as exc:
+        raise RuntimeStorageError(
+            "Canonical cross-process lock root is unavailable or not writable: "
+            f"{preferred}: {exc}. Set ARGOS_LOCK_ROOT to a writable directory."
         ) from exc
     return preferred
 
@@ -3166,7 +3240,7 @@ class Runner:
                         content, meta = parse_agy(out)
                     else:
                         return ArgosResult(argos=argos, status="error", provider=provider, model=model, kind=kind, error=f"unsupported kind {kind}", candidate=dict(candidate), persona=persona_meta, assignment=assignment_meta or persona_meta, prompt_manifest=prompt_manifest)
-        except TimeoutError as e:
+        except (TimeoutError, RuntimeStorageError) as e:
             return ArgosResult(argos=argos, status="error", provider=provider, model=model, kind=kind, error=str(e), candidate=dict(candidate), persona=persona_meta, assignment=assignment_meta or persona_meta, prompt_manifest=prompt_manifest)
         err_text = classified_error_text(err, out, content, rc)
         if rc == 0 and content:
@@ -3430,26 +3504,35 @@ def job_mode(args: argparse.Namespace) -> int:
     background_path = ref / "background.json"
     meta_path = ref / "meta.json"
     payload: dict[str, Any] = {"artifact_dir": str(ref)}
-    if background_path.exists():
-        payload.update(json.loads(background_path.read_text(encoding="utf-8")))
-    if meta_path.exists():
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        synthesis_payload = meta.get("synthesis")
-        synthesis = (
-            argos_result_from_dict(synthesis_payload)
-            if isinstance(synthesis_payload, dict)
-            else None
-        )
-        payload["status"] = "complete" if argos_exit_code(
-            [argos_result_from_dict(r) for r in meta.get("results", [])],
-            synthesis,
-        ) == EXIT_OK else "error"
-        payload["meta"] = meta
-    else:
-        pid = payload.get("pid")
-        payload["status"] = "running" if pid_alive(int(pid) if pid else None) else (
-            "dead" if pid else "unknown"
-        )
+    try:
+        if background_path.exists():
+            payload.update(
+                load_durable_json_object(
+                    background_path,
+                    label="Argos background job state",
+                )
+            )
+        if meta_path.exists():
+            meta = load_durable_json_object(meta_path, label="Argos job result state")
+            synthesis_payload = meta.get("synthesis")
+            synthesis = (
+                argos_result_from_dict(synthesis_payload)
+                if isinstance(synthesis_payload, dict)
+                else None
+            )
+            payload["status"] = "complete" if argos_exit_code(
+                [argos_result_from_dict(r) for r in meta.get("results", [])],
+                synthesis,
+            ) == EXIT_OK else "error"
+            payload["meta"] = meta
+        else:
+            pid = payload.get("pid")
+            payload["status"] = "running" if pid_alive(int(pid) if pid else None) else (
+                "dead" if pid else "unknown"
+            )
+    except DurableStateError as exc:
+        payload["status"] = "error"
+        payload["error"] = str(exc)
     stderr_path = payload.get("stderr_path")
     if stderr_path and Path(stderr_path).exists():
         payload["stderr_tail"] = Path(stderr_path).read_text(encoding="utf-8", errors="replace")[-4000:]
@@ -3457,6 +3540,8 @@ def job_mode(args: argparse.Namespace) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(f"{payload.get('status')}\tpid={payload.get('pid')}\t{ref}")
+        if payload.get("error"):
+            print(payload["error"])
         if payload.get("stderr_tail"):
             print(payload["stderr_tail"])
     return EXIT_OK if payload.get("status") in {"running", "complete"} else EXIT_ERROR
@@ -3509,7 +3594,10 @@ def load_session(path: Path) -> dict[str, Any]:
     p = path / "session.json"
     if not p.exists():
         raise SystemExit(f"Argos session not found: {path.name}")
-    return json.loads(p.read_text(encoding="utf-8"))
+    try:
+        return load_durable_json_object(p, label="Argos session state")
+    except DurableStateError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def repair_active_turn(sess: dict[str, Any], sdir: Path) -> bool:
@@ -4015,8 +4103,22 @@ async def start_mode(
     images = validated_image_paths(args.image)
     enforce_image_mode(mode, images)
     prompt = resolve_prompt_input(args.prompt, getattr(args, "prompt_file", None))
-    sid = safe_session_id()
     root = Path(args.artifact_root).expanduser()
+    require_writable_directory(
+        root,
+        label="Argos artifact root",
+        remediation=(
+            "Use --artifact-root <writable-path> or set ARGOS_ARTIFACT_ROOT "
+            "to a writable directory."
+        ),
+    )
+    if cross_process_concurrency_enabled(cfg):
+        require_writable_directory(
+            DEFAULT_LOCK_ROOT,
+            label="Canonical cross-process lock root",
+            remediation="Set ARGOS_LOCK_ROOT to a writable directory.",
+        )
+    sid = safe_session_id()
     sdir = session_dir(root, sid)
     turn = 1
     tdir = turn_dir_for(sdir, turn)
@@ -4097,6 +4199,14 @@ async def ask_mode(
     return_payload: bool = False,
 ) -> int | tuple[int, dict[str, Any]]:
     root = Path(args.artifact_root).expanduser()
+    require_writable_directory(
+        root,
+        label="Argos artifact root",
+        remediation=(
+            "Use --artifact-root <writable-path> or set ARGOS_ARTIFACT_ROOT "
+            "to a writable directory."
+        ),
+    )
     sdir = session_dir(root, args.session_id)
     prompt = resolve_prompt_input(args.prompt, getattr(args, "prompt_file", None))
     images = validated_image_paths(args.image)
@@ -4110,12 +4220,32 @@ async def ask_mode(
             raise SessionConflictError(
                 f"Session turn conflict: expected {expected_turn}, current {current_turn}"
             )
+        cfg = sess["config_snapshot"]
+        if cross_process_concurrency_enabled(cfg):
+            require_writable_directory(
+                DEFAULT_LOCK_ROOT,
+                label="Canonical cross-process lock root",
+                remediation="Set ARGOS_LOCK_ROOT to a writable directory.",
+            )
+        files, inputs_report = expand_context_for_args(args, cfg)
+        mode = sess["mode"]
+        enforce_image_mode(mode, images)
+        shared_context = _council_synthesis_text(sdir, sess)
+        full_prompt = build_prompt(
+            mode,
+            prompt,
+            files,
+            cfg,
+            images,
+            strict_context_total=bool(files),
+            context_file_chars=int(inputs_report["limits"]["max_file_chars"]),
+            shared_context=shared_context,
+        )
         repaired = repair_active_turn(sess, sdir)
         if sess.get("active_turn"):
             raise SystemExit(f"Session busy with turn {sess['active_turn'].get('turn')}")
         target_argoses = args.argoses or list(sess.get("argoses", {}).keys())
         turn = int(sess.get("turn", 0)) + 1
-        shared_context = _council_synthesis_text(sdir, sess)
         sess["active_turn"] = {
             "turn": turn,
             "pid": os.getpid(),
@@ -4126,28 +4256,25 @@ async def ask_mode(
         if repaired:
             sess.setdefault("events", []).append({"type": "repair", "at": utc_now()})
         atomic_write_json(sdir / "session.json", sess)
-    cfg = sess["config_snapshot"]
-    files, inputs_report = expand_context_for_args(args, cfg)
     legacy_cwd = sess.get("provider_cwd")
     pcwd = provider_session_cwd(sdir) if legacy_cwd else Path.cwd()
-    mode = sess["mode"]
-    enforce_image_mode(mode, images)
     retry_of = getattr(args, "retry_of", None)
     retry_targets = set(getattr(args, "retry_argoses", []) or [])
     tdir = turn_dir_for(sdir, turn)
     tdir.mkdir(parents=True, exist_ok=False, mode=0o700)
     os.chmod(tdir, 0o700)
     images = stage_vision_images(tdir, images)
-    full_prompt = build_prompt(
-        mode,
-        prompt,
-        files,
-        cfg,
-        images,
-        strict_context_total=bool(files),
-        context_file_chars=int(inputs_report["limits"]["max_file_chars"]),
-        shared_context=shared_context,
-    )
+    if images:
+        full_prompt = build_prompt(
+            mode,
+            prompt,
+            files,
+            cfg,
+            images,
+            strict_context_total=bool(files),
+            context_file_chars=int(inputs_report["limits"]["max_file_chars"]),
+            shared_context=shared_context,
+        )
     atomic_write_text(tdir / "input.md", full_prompt)
     write_inputs_report(tdir, inputs_report)
     runner = Runner(cfg, tdir, provider_cwd=pcwd, mode=mode)
@@ -8136,6 +8263,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     argv = rewrite_research_argv(argv)
     parser = argparse.ArgumentParser(prog="argos")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     sub = parser.add_subparsers(dest="cmd")
 

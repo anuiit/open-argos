@@ -4,6 +4,12 @@
 .native-windows-validated.json
 __pycache__/
 *.pyc
+.venv/
+build/
+dist/
+*.egg-info/
+.coverage*
+htmlcov/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

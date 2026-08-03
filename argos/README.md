@@ -2,6 +2,10 @@
 
 Global external-argos runner for Codex (command: `argos`). Standard-library Python. It calls allowlisted external CLIs only (`opencode`, `claude`, `kimi`, and `agy`/Antigravity for image analysis) and never launches `codex`/`codex exec`.
 
+Install the `0.9.0-rc1` candidate from the repository with `pipx install .` or
+`uv tool install .`. The canonical cross-platform and MCP setup lives in the
+root [README](../README.md) and [MCP guide](../docs/MCP_INSTALL.md).
+
 ## Invariants
 
 - No native `ollama` CLI. Ollama Cloud is used only through `opencode run -m ollama-cloud/...`.
@@ -25,6 +29,25 @@ argos run consensus < prompt.md
 ```
 
 `--prompt-file` is the preferred transport for long or shell-sensitive prompts. It reads UTF-8 text directly in Argos and is available on `run`, `start`, and `ask`; do not combine it with the positional prompt.
+
+Argos stores persistent sessions under `~/.argos/sessions` and cross-process
+locks under `~/.argos/locks` by default. In a sandbox that cannot write to the
+user profile, point both roots at writable, ignored directories before
+starting a session:
+
+```powershell
+$env:ARGOS_ARTIFACT_ROOT = (Join-Path (Get-Location) '.argos')
+$env:ARGOS_LOCK_ROOT = (Join-Path (Get-Location) '.argos-locks')
+```
+
+```bash
+export ARGOS_ARTIFACT_ROOT="$PWD/.argos"
+export ARGOS_LOCK_ROOT="$PWD/.argos-locks"
+```
+
+`--artifact-root` overrides the session root for one command. Argos validates
+both writable roots before creating a session, and reports the corresponding
+flag or environment variable if validation fails.
 
 ## Multi-turn sessions
 
@@ -89,9 +112,9 @@ argos run review --prompt-file prompts/review.md \
 
 Directory expansion is recursive, deterministic, UTF-8-only, and auditable in
 `inputs_report.json`. It never follows symlinks or Windows reparse points.
-Version-control stores, dependency/build/cache directories, Argos state,
-common credential directories, secret-like filenames, and binary files are
-excluded by default. File-count and character budgets fail explicitly instead
+Version-control stores, dependency/build/cache directories, Argos/OMC state,
+benchmark corpora, common credential directories, secret-like filenames, and
+binary files are excluded by default. File-count and character budgets fail explicitly instead
 of silently selecting or truncating a subset. `--include` and `--exclude`
 filter directory expansion only; an explicit `--file` is either included
 verbatim or rejected with its reason.
@@ -236,7 +259,7 @@ Invariant important : les triggers `@critique`, `@review`, etc. sont interprÃ©tÃ
 
 ## Validation notes
 
-Version `0.9.0` adds the neutral persistent `council` mode used by
+Version `0.9.0-rc1` adds the neutral persistent `council` mode used by
 `$argos-council`: one or two external partners, verbatim current-message
 transport, and no task-specific persona or mandatory review headings.
 
@@ -282,8 +305,7 @@ Gate states are intentionally limited to `pass`, `fail`, `blocked`, and `needs_h
 
 ## Codex plugin facade
 
-A local Codex plugin facade was scaffolded at
-`~/.agents/plugins/plugins/argos-tools`. Its focused public surface is
+The bundled `argos-tools/` Codex plugin facade exposes the focused public surface
 `$argos`, `$argos-plan`, `$argos-research`, `$argos-critique`,
 `$argos-review`, and `$argos-council`. Operational config, diagnostics, gates,
 vision, and generic conversation commands remain available through the
@@ -315,54 +337,20 @@ The main resource templates are:
 - `argos://runs/{request_id}/coverage`
 - `argos://runs/{request_id}/findings`
 
-The bridge pins the official Python SDK through PEP 723 metadata, so the
-regular Argos CLI remains dependency-free. Prepare a reusable MCP runtime
-once, outside the repository, before registering a host:
+The installed `argos-mcp` launcher keeps the regular CLI dependency-free. It
+prepares a pinned, isolated MCP runtime and then starts the bundled server with
+clean stdio:
 
-```powershell
-$runtime = uv run python F:\dev\open-argos\argos\mcp_runtime.py `
-  --workspace F:\dev\open-argos `
-  --json | ConvertFrom-Json
-$mcpPython = $runtime.runtime_python
-$mcpServer = $runtime.server_path
+```bash
+argos-mcp --prepare --json
+codex mcp add argos --env "ARGOS_WORKSPACE=<project>" -- argos-mcp
+claude mcp add argos --scope local -e "ARGOS_WORKSPACE=<project>" -- argos-mcp
 ```
 
-The bootstrap verifies the native `pydantic_core` import before marking the
-runtime ready. `uv run --script ...\mcp_server.py` remains a portable SDK
-smoke/fallback, but it is not the host recipe: dependency resolution on a
-cold machine can exceed client startup defaults.
-
-Claude Code registration and first-query startup settings:
-
-```powershell
-claude mcp add argos --scope local `
-  -e ARGOS_WORKSPACE=F:\dev\open-argos `
-  -- $mcpPython $mcpServer
-claude mcp get argos
-
-$env:MCP_TIMEOUT = '120000'
-$env:MCP_CONNECTION_NONBLOCKING = '0'
-$env:MCP_CONNECT_TIMEOUT_MS = '60000'
-claude
-```
-
-Claude Code normally connects MCP servers in the background. The three
-startup variables above make the first query wait for this cold-starting
-stdio server instead of taking an early tool snapshot.
-
-Codex registration:
-
-```powershell
-codex mcp add argos `
-  --env ARGOS_WORKSPACE=F:\dev\open-argos `
-  -- $mcpPython $mcpServer
-codex mcp get argos
-```
-
-Add `startup_timeout_sec = 120` to `[mcp_servers.argos]` in
-`~/.codex/config.toml` (or the trusted project configuration). Codex may
-defer MCP tool descriptions; agents should discover `argos_health` or another
-Argos tool through tool search before calling it.
+Use the absolute `argos-mcp` path when the client does not inherit the tool
+installer's `PATH`. Full Windows, WSL, timeout, verification, update, rollback,
+and uninstall instructions are centralized in
+[`docs/MCP_INSTALL.md`](../docs/MCP_INSTALL.md).
 
 The SDK and real-stdio smoke suite is:
 
@@ -371,14 +359,10 @@ uv run --with mcp==2.0.0 --with pytest python -m pytest `
   argos/tests/test_mcp_contract.py `
   argos/tests/test_mcp_adapter.py `
   argos/tests/test_mcp_runtime.py `
+  argos/tests/test_mcp_launcher.py `
   argos/tests/test_mcp_server.py `
   argos/tests/test_mcp_stdio.py -q
 ```
-
-Set `$env:ARGOS_MCP_RUNTIME_PYTHON = $mcpPython` before this command to make
-the stdio tests exercise the exact direct-runtime launch used by Claude Code
-and Codex. Without it, the tests intentionally retain the portable PEP 723
-fallback.
 
 
 ## Native Windows support
@@ -403,7 +387,7 @@ Persistent turns distinguish `completed`, `partial`, `failed`,
 counter remains monotonic, while `last_good_turn` advances only for
 `completed` and `partial` turns.
 
-Native Windows support is a first-class target. On Windows, provider processes are launched with `CREATE_NEW_PROCESS_GROUP`, and on timeout the entire process tree is terminated via `taskkill /F /T /PID <pid>`, with a plain kill of the direct process as fallback if `taskkill` is unavailable or fails. The `bin\argos-dev.cmd` and `bin\argos-dev.ps1` wrappers are provided for Windows shells (cmd and PowerShell). The native Windows copy lives in `F:\dev\open-argos`, a mirror of the WSL copy; feature parity between the two is required. WSL remains supported when provider CLIs/auth live in Linux.
+Native Windows support is a first-class target. On Windows, provider processes are launched with `CREATE_NEW_PROCESS_GROUP`, and on timeout the entire process tree is terminated via `taskkill /F /T /PID <pid>`, with a plain kill of the direct process as fallback if `taskkill` is unavailable or fails. The `bin\argos-dev.cmd` and `bin\argos-dev.ps1` wrappers are provided for Windows shells (cmd and PowerShell). A native Windows clone can live in any writable directory; WSL remains a separate supported installation when provider CLIs/auth live in Linux.
 On Windows, Argos preserves the user's normal OpenCode profile instead of
 inventing a second XDG home, uses a longer OpenCode startup allowance, and
 disables Claude Code's background auto-updater for provider subprocesses so

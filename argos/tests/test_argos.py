@@ -28,7 +28,21 @@ sys.modules[spec.name] = argos
 spec.loader.exec_module(argos)
 
 
-class ConfigValidationTests(unittest.TestCase):
+class IsolatedRuntimeRootsTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        runtime_root = tempfile.TemporaryDirectory()
+        self.addCleanup(runtime_root.cleanup)
+        lock_root_patch = mock.patch.object(
+            argos,
+            "DEFAULT_LOCK_ROOT",
+            Path(runtime_root.name) / "locks",
+        )
+        lock_root_patch.start()
+        self.addCleanup(lock_root_patch.stop)
+
+
+class ConfigValidationTests(IsolatedRuntimeRootsTestCase):
     def test_version_tracks_sota_release(self) -> None:
         self.assertTrue(argos.VERSION.startswith("0.9."))
 
@@ -208,7 +222,7 @@ class ConfigValidationTests(unittest.TestCase):
                     argos.validate_config(cfg)
 
 
-class PromptAndRoutingTests(unittest.TestCase):
+class PromptAndRoutingTests(IsolatedRuntimeRootsTestCase):
     def test_council_defaults_to_two_persistent_conversation_partners(self) -> None:
         self.assertEqual(argos.DEFAULT_CONFIG["modes"]["council"], ["fable", "kimi3"])
         mode, partners, preset = argos.resolve_mode_and_argoses(
@@ -377,7 +391,7 @@ class PromptAndRoutingTests(unittest.TestCase):
         self.assertIsNone(preset)
 
 
-class ProviderParsingTests(unittest.TestCase):
+class ProviderParsingTests(IsolatedRuntimeRootsTestCase):
     def test_parse_opencode_jsonl_text_and_usage(self) -> None:
         stdout = "\n".join([
             json.dumps({"sessionID": "sess_1", "part": {"type": "text", "text": "hello "}}),
@@ -511,7 +525,7 @@ class ProviderParsingTests(unittest.TestCase):
                     argos.validated_image_paths([str(path)])
 
 
-class ArtifactTests(unittest.TestCase):
+class ArtifactTests(IsolatedRuntimeRootsTestCase):
     def test_make_artifact_dir_avoids_same_second_collision_and_updates_latest(self) -> None:
         class FixedDateTime:
             @classmethod
@@ -537,7 +551,7 @@ class ArtifactTests(unittest.TestCase):
                 self.assertEqual(latest.read_text(encoding="utf-8"), str(second))
 
 
-class SubprocessTimeoutTests(unittest.TestCase):
+class SubprocessTimeoutTests(IsolatedRuntimeRootsTestCase):
 
     def test_run_candidate_rejects_minimax_overrides_before_subprocess(self) -> None:
         candidates = [
@@ -683,7 +697,38 @@ class SubprocessTimeoutTests(unittest.TestCase):
                     self.fail(f"child process still alive after timeout: {child_pid}")
 
 
-class CrossProcessConcurrencyTests(unittest.TestCase):
+class CrossProcessConcurrencyTests(IsolatedRuntimeRootsTestCase):
+    def test_late_lock_storage_failure_becomes_provider_error(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(
+                argos,
+                "_select_lock_root",
+                side_effect=argos.RuntimeStorageError(
+                    "lock root unavailable; set ARGOS_LOCK_ROOT"
+                ),
+            ),
+            mock.patch.object(argos, "run_subprocess") as run_subprocess,
+        ):
+            runner = argos.Runner(argos.DEFAULT_CONFIG, Path(td))
+            result = asyncio.run(
+                runner.run_candidate(
+                    "sonnet",
+                    {
+                        "kind": "claude",
+                        "model": "claude-sonnet-5",
+                        "provider": "claude",
+                    },
+                    "prompt",
+                    [],
+                    fallback_from=None,
+                )
+            )
+
+        self.assertEqual(result.status, "error")
+        self.assertIn("ARGOS_LOCK_ROOT", result.error or "")
+        run_subprocess.assert_not_called()
+
     def test_cross_process_slot_contention_times_out_and_releases(self) -> None:
         cfg_literal = repr({
             "concurrency": {
@@ -799,7 +844,7 @@ class CrossProcessConcurrencyTests(unittest.TestCase):
         asyncio.run(scenario())
 
 
-class RunListingTests(unittest.TestCase):
+class RunListingTests(IsolatedRuntimeRootsTestCase):
     def test_list_runs_reports_one_shot_artifacts_without_sessions(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -857,7 +902,7 @@ class RunListingTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in rows], ["adv_20260701T010204_deadbeef"])
 
 
-class SafetyAndSessionTests(unittest.TestCase):
+class SafetyAndSessionTests(IsolatedRuntimeRootsTestCase):
     def test_subprocess_allowlist_blocks_codex_and_ollama(self) -> None:
         argos.assert_allowed_subprocess(["opencode", "run"])
         argos.assert_allowed_subprocess(["claude", "-p"])
@@ -1153,7 +1198,7 @@ class SafetyAndSessionTests(unittest.TestCase):
         self.assertIn("missing provider_session_id", state["last_error"])
 
 
-class ConfigEditingAndGateTests(unittest.TestCase):
+class ConfigEditingAndGateTests(IsolatedRuntimeRootsTestCase):
     def test_save_user_config_with_backup_and_set_model_shape(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "config.json"
@@ -1330,7 +1375,7 @@ class ConfigEditingAndGateTests(unittest.TestCase):
         self.assertEqual(state["last_error"], "unauthorized")
 
 
-class PromptInputTests(unittest.TestCase):
+class PromptInputTests(IsolatedRuntimeRootsTestCase):
     def test_prompt_file_is_mutually_exclusive_with_inline_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             prompt_file = Path(td) / "prompt.md"
@@ -1371,7 +1416,7 @@ class PromptInputTests(unittest.TestCase):
                     argos.resolve_prompt_input(None, str(prompt_file))
 
 
-class ConversationModeTests(unittest.TestCase):
+class ConversationModeTests(IsolatedRuntimeRootsTestCase):
     def args(self, **overrides):
         defaults = {
             "config": "/nonexistent/argos-test-config.json",
@@ -1614,8 +1659,54 @@ class ConversationModeTests(unittest.TestCase):
         self.assertEqual(rc, argos.EXIT_ERROR)
         self.assertEqual(payload["status"], "dead")
 
+    def test_job_mode_reports_malformed_background_state_as_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            job = Path(td) / "job"
+            job.mkdir()
+            (job / "background.json").write_text('{"pid":', encoding="utf-8")
+            out = io.StringIO()
+            args = type(
+                "Args",
+                (),
+                {"job_ref": str(job), "artifact_root": td, "json": True},
+            )()
 
-class ErrorSurfacingTests(unittest.TestCase):
+            with contextlib.redirect_stdout(out):
+                rc = argos.job_mode(args)
+            payload = json.loads(out.getvalue())
+
+        self.assertEqual(rc, argos.EXIT_ERROR)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("background.json", payload["error"])
+        self.assertIn("malformed JSON", payload["error"])
+
+    def test_job_mode_reports_malformed_result_meta_as_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            job = Path(td) / "job"
+            job.mkdir()
+            (job / "background.json").write_text(
+                json.dumps({"pid": 999999, "status": "running"}),
+                encoding="utf-8",
+            )
+            (job / "meta.json").write_text('{"results":', encoding="utf-8")
+            out = io.StringIO()
+            args = type(
+                "Args",
+                (),
+                {"job_ref": str(job), "artifact_root": td, "json": True},
+            )()
+
+            with contextlib.redirect_stdout(out):
+                rc = argos.job_mode(args)
+            payload = json.loads(out.getvalue())
+
+        self.assertEqual(rc, argos.EXIT_ERROR)
+        self.assertEqual(payload["status"], "error")
+        self.assertIn("meta.json", payload["error"])
+        self.assertIn("malformed JSON", payload["error"])
+
+
+class ErrorSurfacingTests(IsolatedRuntimeRootsTestCase):
     OPENCODE_CANDIDATE = {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go"}
 
     def test_opencode_json_error_line_surfaces_real_message(self) -> None:
@@ -1707,7 +1798,7 @@ class ErrorSurfacingTests(unittest.TestCase):
             self.assertEqual(result.error, "empty response rc=1")
 
 
-class ProviderCwdTests(unittest.TestCase):
+class ProviderCwdTests(IsolatedRuntimeRootsTestCase):
     def _args(self, **overrides):
         defaults = {
             "config": "/nonexistent/argos-test-config.json",
@@ -1848,7 +1939,7 @@ class ProviderCwdTests(unittest.TestCase):
         self.assertEqual(captures, [Path.cwd()])
 
 
-class SotaExplorerTests(unittest.TestCase):
+class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
     def sota_args(self, **overrides):
         defaults = {
             "config": "/nonexistent/argos-test-config.json",
@@ -2470,7 +2561,19 @@ class SotaExplorerTests(unittest.TestCase):
         self.assertEqual(result["unexpected_urls"], [])
 
 
-class NativeWindowsExecutableResolutionTests(unittest.TestCase):
+class NativeWindowsExecutableResolutionTests(IsolatedRuntimeRootsTestCase):
+    def test_windows_install_shim_preserves_explicit_runtime_roots(self) -> None:
+        installer = (
+            ARGOS_PATH.parents[1] / "scripts" / "install-claude-code-windows.ps1"
+        ).read_text(encoding="utf-8")
+        for variable in (
+            "ARGOS_CONFIG_DIR",
+            "ARGOS_ARTIFACT_ROOT",
+            "ARGOS_LOCK_ROOT",
+        ):
+            with self.subTest(variable=variable):
+                self.assertIn(f"if not defined {variable} set", installer)
+
     def test_resolve_windows_executable_rewrites_bare_shim_to_full_path(self) -> None:
         with (
             mock.patch.object(argos, "IS_WINDOWS", True),
@@ -2573,7 +2676,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class InternalBenchmarkTests(unittest.TestCase):
+class InternalBenchmarkTests(IsolatedRuntimeRootsTestCase):
     def test_internal_benchmark_writes_versioned_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             artifact = Path(td) / "bench"
