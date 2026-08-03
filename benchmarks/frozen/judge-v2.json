@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "benchmark_version": "2.0.0",
+  "created_at": "2026-07-31",
+  "primary_evaluation": {
+    "kind": "deterministic",
+    "scorers": [
+      "required_and_forbidden_concepts",
+      "critical_non_compensatory_gates",
+      "clean_case_hallucination_gate",
+      "section_contract",
+      "actionability",
+      "frozen_replay_calibration"
+    ]
+  },
+  "judge_lane": {
+    "enabled_by_default": false,
+    "status": "experimental",
+    "stable_judge_argos": "fable",
+    "candidate_identity_blinding": "required_when_supported",
+    "candidate_must_not_judge_itself": true,
+    "minimum_independent_judges": 2,
+    "reporting": "separate_axis_only"
+  },
+  "guardrails": [
+    "Judge outputs do not alter deterministic scores.",
+    "Provider failures are readiness observations, never zero-quality answers.",
+    "Replay outputs are scorer calibration evidence, never model-performance samples.",
+    "Judge and candidate model or provider overlap must be disclosed.",
+    "No global score may combine harness, readiness, quality and performance."
+  ],
+  "runner_timeout_sec": 1300,
+  "rebaseline_required_when": [
+    "corpus hash changes",
+    "prompt contract changes",
+    "scorer contract changes",
+    "isolated assignment changes",
+    "judge rubric or judge model changes"
+  ]
+}

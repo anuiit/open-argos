@@ -1,4 +1,5 @@
 .argos/
+.argos-locks/
 .config/argos-dev/.env
 .native-windows-validated.json
 __pycache__/
@@ -9,4 +10,5 @@ __pycache__/
 *.bak*
 
 .omc/
+.omx/
 benchmarks/results/

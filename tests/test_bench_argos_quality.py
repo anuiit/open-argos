@@ -9,6 +9,10 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(bench)
 
 
+def test_legacy_main_symbol_is_preserved() -> None:
+    assert bench.main is bench.cli_main
+
+
 def test_bullet_count_only_treats_standalone_none_markers_as_empty() -> None:
     assert bench.bullet_count("(none)") == 0
     assert bench.bullet_count("- (none)\n- real issue") == 1
@@ -125,7 +129,7 @@ def test_score_quality_applies_trap_penalty_cap_through_full_path() -> None:
 
 
 def test_manifest_false_positive_traps_have_known_routes() -> None:
-    manifest = bench.load_json(bench.MANIFEST)
+    manifest = bench.load_json(bench.LEGACY_MANIFEST)
     traps = {
         trap
         for case in manifest["cases"]
@@ -137,14 +141,14 @@ def test_manifest_false_positive_traps_have_known_routes() -> None:
 
 
 def test_static_scorer_cases_pass() -> None:
-    manifest = bench.load_json(bench.MANIFEST)
+    manifest = bench.load_json(bench.LEGACY_MANIFEST)
     rows = [bench.score_scorer_case(case) for case in manifest.get("scorer_cases", [])]
     assert rows
     assert {row["status"] for row in rows} == {"pass"}
 
 
 def test_real_cases_have_case_specific_actionability_anchors() -> None:
-    manifest = bench.load_json(bench.MANIFEST)
+    manifest = bench.load_json(bench.LEGACY_MANIFEST)
     generic = {"structured_fix_steps", "concrete_fix_target"}
     real_cases = [case for case in manifest["cases"] if case.get("kind") == "real"]
     assert real_cases
@@ -194,3 +198,79 @@ def test_concrete_fix_target_rejects_generic_backticks_and_single_target() -> No
     assert not bench.fix_requirement_hit("concrete_fix_target", generic)
     assert not bench.fix_requirement_hit("concrete_fix_target", one_target)
     assert bench.fix_requirement_hit("concrete_fix_target", two_targets)
+
+
+def test_v2_manifest_includes_launch_matrix_and_directory_case() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    validation = bench.validate_manifest(manifest, manifest_path=bench.MANIFEST)
+    assert manifest["schema_version"] == 2
+    assert manifest["version"] == "2.0.0"
+    assert validation["case_count"] == 10
+    assert validation["replay_count"] == 13
+    assert set(validation["launch_coverage"]) == {
+        "oneshot",
+        "session",
+        "council",
+        "debate",
+    }
+    assert any(
+        case.get("inputs", {}).get("directories")
+        for case in manifest["cases"]
+    )
+
+
+def test_directory_case_helpers_keep_directory_attachment_explicit() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    case = next(
+        case
+        for case in manifest["cases"]
+        if case.get("inputs", {}).get("directories")
+    )
+    inputs = bench.normalize_case_inputs(case)
+    directory = case["inputs"]["directories"][0]
+    assert ("dir", str((bench.ROOT / directory).resolve())) in inputs
+    context_args = bench.build_common_context_args(case)
+    assert "--dir" in context_args
+    assert str((bench.ROOT / directory).resolve()) in context_args
+
+
+def test_session_case_keeps_ordered_multi_turn_contract() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    case_index = bench.load_case_by_id(manifest)
+    launch = next(
+        item
+        for item in manifest["launches"]
+        if bench.normalize_launch(item["surface"]) == "session"
+    )
+    case = case_index[launch["case_id"]]
+    turns = case["turns"]
+    assert len(turns) == 2
+    assert "Correction" in turns[1]["prompt"]
+
+
+def test_classify_launch_distinguishes_timeout_and_provider_failure() -> None:
+    assert bench.classify_launch(124, {}, "", True, "run") == "timeout"
+    assert bench.classify_launch(1, {}, "ConnectionRefused", False, "run") == "provider_unavailable"
+    assert bench.classify_launch(126, {}, "", False, "run") == "launcher_failed"
+    assert bench.classify_launch(3, {}, "needs_human", False, "run") == "needs_human"
+
+
+def test_modern_manifest_replay_outputs_are_structured() -> None:
+    manifest = bench.load_json(bench.MANIFEST)
+    case_index = bench.load_case_by_id(manifest)
+    replay = manifest["replays"][0]
+    spec = bench.RunSpec(
+        spec_id=f"replay:{replay['replay_id']}",
+        track="replay",
+        launch="replay",
+        case_id=replay["case_id"],
+        replay_id=replay["replay_id"],
+    )
+    row = bench.execute_replay_spec(
+        spec,
+        manifest=manifest,
+        case_index=case_index,
+    )
+    assert row["status"] == "replay_ok"
+    assert row["quality"]["accepted"] is True
+    assert row["source"] == "scorer_calibration_replay"

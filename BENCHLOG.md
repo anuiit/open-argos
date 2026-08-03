@@ -503,3 +503,71 @@ Reason for run 2:
 - Full artifact: `/home/sina/mosaic-dev/benchmarks/results/20260721T014913Z-v1.1.0-full-minimax` (repo dir renamed to `open-argos` right after this run); score `93.731649`; axes `38.731649/20/25/10`; cost `~0.0613` (sum of per-case costs); latency `~491s`; real quality `0.9244`; injected quality `0.820893`; real actionability mean `0.832`; real full-count `2`; false-positive hits `0`; scorer selfcheck `1.0`; no `needs_human`.
 - Notable: `injected-prompt-injection-007` observes `recall=1.0`, `score=0.756667` — the v1.0.9 live miss (`recall=0`, `score=0.31`) is resolved; treat as model-output variance recovery, monitor across future runs.
 - Interpretation: this is the official baseline for v1.1.0 / argos core 0.7.0. Not comparable with any v1.0.x score by design (fixture hashes invalidated by the rename).
+
+
+### Benchmark v2.0.0 — performance, readiness, and output quality (2026-07-31)
+
+- Measurement redesign: v2 deliberately has no global score. Harness health,
+  scorer calibration, provider readiness, live output quality, and performance
+  are separate axes so a fast provider failure cannot look like good quality.
+- Corpus: 10 realistic cases, 13 frozen strong/adversarial replays, directory
+  and multi-file inputs, multi-turn corrections, attachment injection,
+  technology/research decisions, state recovery, and Council dissent retention.
+  Live surfaces cover `oneshot`, `session`, `debate`, and `council`; harness and
+  replay tracks remain independently runnable.
+- Harness-only artifact:
+  `benchmarks/results/benchmark-v2-final3-harness`; PASS, normalized internal
+  score `100.0` (`9/9`), two iterations, observed harness wall time
+  `2.919535s`.
+- Scorer-only artifact:
+  `benchmarks/results/benchmark-v2-final3-replay`; PASS, all `13/13` frozen
+  replay expectations calibrated, total observed wall time `0.023174s`.
+- Combined offline artifact:
+  `benchmarks/results/benchmark-v2-final3-offline`; PASS, 14 rows, harness
+  `100.0`, scorer `13/13`, total wall time `1.318914s` and harness wall time
+  `1.284103s`.
+- Strict comparison artifact:
+  `benchmarks/results/benchmark-v2-final3-compare`; comparable under identical
+  corpus/selection/budget/measurement hashes. Its single-sample harness delta
+  is `+0.155773s` (`1.284103s` to `1.439876s`) and is recorded as timing noise,
+  not as a performance regression claim.
+- Refusal control:
+  `benchmarks/results/benchmark-v2-final3-incompatible`; the comparator rejects
+  a harness-only run against the combined matrix because their selection hashes
+  differ and returns a non-zero CLI status.
+- Bounded live smoke:
+  `benchmarks/results/benchmark-v2-verified-live-smoke`; exactly one Sonnet
+  call was attempted and timed out, so status is `degraded`, readiness is
+  `timeout: 1`, total wall time is `183.937033s`, and no live quality score was
+  fabricated.
+- Additional live launch evidence:
+  `benchmark-v2-final-live-oneshot` and `benchmark-v2-final-live-session`
+  classify the installed OpenCode/Bun bootstrap failure as
+  `provider_bootstrap_failed` (`6.323888s` and `3.858316s`);
+  `benchmark-v2-final-live-debate` and `benchmark-v2-final-live-council`
+  preserve persistent-command timeouts as `outcome_unknown` (`120.472682s` and
+  `45.376691s`). A clean `XDG_CONFIG_HOME` makes `opencode --version` work but
+  the sandbox then blocks OpenCode's user-log path; the out-of-sandbox live
+  rerun was not authorized. Consequently v2 has a validated offline baseline
+  and readiness measurements, but no successful live model-quality baseline.
+- Safety/comparability controls: explicit `--live`, immutable result
+  directories, dry-run with no process/artifact side effects, bounded profiles,
+  cost admission and between-turn checks, stop-on-missing-cost telemetry,
+  process-tree timeout cleanup, exact adversarial gate calibration, hidden-label
+  leak checks, clean-case hallucination gates, observed provider/model/config
+  identities, and strict corpus/selection/budget comparison hashes.
+- Final verification: `318 passed, 4 skipped, 46 subtests passed`; benchmark
+  tests `61 passed`; Ruff PASS; Python byte-compilation PASS; Argos-Tools
+  adversarial smoke PASS (`32 checks / 16 features`) and overall smoke PASS.
+- Review history: the initial Argos review, Council validation, plan/critique,
+  and three final Sonnet review rounds were all attempted with auditable
+  artifacts. External providers timed out or failed bootstrap, so none of those
+  attempts is claimed as model consensus. Independent local performance,
+  quality, verification, and final code-review lanes found and closed the
+  selection-hash, multi-turn cost, `needs_human`, calibration, Windows cleanup,
+  no-overlap, timeout-reason, telemetry-stop, and legacy-`main` compatibility
+  defects; final local code review is PASS.
+- Rebaseline status: offline baseline complete; successful live rebaseline
+  still required after the local OpenCode/Claude provider environment is
+  healthy and external execution of the committed synthetic fixtures is
+  explicitly authorized.
