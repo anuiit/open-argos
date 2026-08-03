@@ -2253,16 +2253,31 @@ async def _run_opencode_stream(
 
     async def read_stdout() -> None:
         nonlocal terminal_error
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                return
-            stdout_chunks.append(line)
-            detected = opencode_terminal_error(line.decode(errors="replace"))
+        pending = bytearray()
+
+        def inspect_line(raw_line: bytes) -> None:
+            nonlocal terminal_error
+            detected = opencode_terminal_error(raw_line.decode(errors="replace"))
             if detected and terminal_error is None:
                 terminal_error = detected
                 terminal_event.set()
                 terminate_process_group(proc, signal.SIGTERM)
+
+        while True:
+            chunk = await proc.stdout.read(64 * 1024)
+            if not chunk:
+                if pending:
+                    inspect_line(bytes(pending))
+                return
+            stdout_chunks.append(chunk)
+            pending.extend(chunk)
+            while True:
+                newline = pending.find(b"\n")
+                if newline < 0:
+                    break
+                line = bytes(pending[:newline])
+                del pending[: newline + 1]
+                inspect_line(line)
 
     feed_task = asyncio.create_task(feed_stdin())
     stdout_task = asyncio.create_task(read_stdout())

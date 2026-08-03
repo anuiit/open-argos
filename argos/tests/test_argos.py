@@ -1658,6 +1658,7 @@ class ErrorSurfacingTests(unittest.TestCase):
     def test_opencode_terminal_error_abort_reports_auth_failure_quickly(self) -> None:
         script = (
             "import sys, time\n"
+            "sys.stdout.write('x' * 70000 + '\\n')\n"
             "sys.stdout.write('{\"type\":\"error\",\"sessionID\":\"s1\",\"error\":{\"name\":\"UnknownError\",\"data\":{\"message\":\"401 unauthorized, please log in\"}}}\\n')\n"
             "sys.stdout.flush()\n"
             "time.sleep(5)\n"
