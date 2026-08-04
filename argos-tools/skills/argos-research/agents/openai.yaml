@@ -1,0 +1,4 @@
+interface:
+  display_name: "Argos Research"
+  short_description: "Decision-oriented source-backed research"
+  default_prompt: "Utilise $argos-research pour vérifier les choix techniques avant de figer une direction."

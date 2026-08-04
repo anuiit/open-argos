@@ -3,21 +3,32 @@
 
 Default mode avoids expensive live multi-argos presets. Use --live for a tiny
 MiniMax text route and agy vision route if local credentials are available. Use
---sota for a public-source retrieval-only SOTA smoke without model spend.
+--research for a public-source retrieval-only research smoke without model spend.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+IS_WINDOWS = os.name == "nt"
+
+
+def resolve_command(cmd: list[str]) -> list[str]:
+    if not IS_WINDOWS or not cmd:
+        return cmd
+    resolved = shutil.which(cmd[0])
+    return [resolved, *cmd[1:]] if resolved else cmd
+
 
 def run(cmd: list[str], *, timeout: int = 120, check: bool = True) -> subprocess.CompletedProcess[str]:
     print("$", " ".join(cmd))
-    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+    proc = subprocess.run(resolve_command(cmd), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
     if proc.stdout:
         print(proc.stdout.strip())
     if proc.stderr:
@@ -65,9 +76,21 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true", help="run small paid/live argos checks")
     parser.add_argument("--vision", action="store_true", help="include agy vision live check; implies --live")
-    parser.add_argument("--sota", action="store_true", help="include retrieval-only argos sota smoke over public sources")
+    parser.add_argument(
+        "--research",
+        "--sota",
+        dest="research",
+        action="store_true",
+        help="include retrieval-only argos research smoke over public sources",
+    )
     parser.add_argument("--adversarial", action="store_true", help="run two break-oriented smoke checks per Argos-Tools/argos feature")
-    parser.add_argument("--adversarial-sota-live", action="store_true", help="include bounded public-source SOTA fetch in adversarial smoke")
+    parser.add_argument(
+        "--adversarial-research-live",
+        "--adversarial-sota-live",
+        dest="adversarial_research_live",
+        action="store_true",
+        help="include bounded public-source research fetch in adversarial smoke",
+    )
     parser.add_argument("--argos-py", help="argos.py path forwarded to adversarial smoke")
     parser.add_argument("--artifact-root", help="argos artifact root for gate/SOTA smoke artifacts")
     parser.add_argument("--no-gate", action="store_true", help="skip writing the argos-tools-smoke gate artifact")
@@ -95,39 +118,40 @@ def main() -> int:
     if args.live and not args.vision:
         if not core_ready:
             raise SystemExit("--live text smoke requires core text argos from argos doctor")
-        run(["argos", "@review", "Smoke test only. Reply PASS.", "--argos", "minimax", "--single-ok", "--json"], timeout=180)
+        run(["argos", "run", "review", "Smoke test only. Reply PASS.", "--argos", "minimax", "--single-ok", "--json"], timeout=180)
     if args.vision:
         if not agy_ready:
             raise SystemExit("--vision smoke requires optional_agy_vision_cli from argos doctor")
         with tempfile.TemporaryDirectory() as td:
             image = Path(td) / "argos-tools-smoke.png"
             write_png(image)
-            run(["argos", "@vision", "Identify the two main colors only.", "--image", str(image), "--json"], timeout=180)
+            run(["argos", "run", "vision", "Identify the two main colors only.", "--image", str(image), "--json"], timeout=180)
     if args.adversarial:
         adversarial_cmd = [sys.executable, str(Path(__file__).with_name("adversarial_smoke_argos_tools.py"))]
         if args.argos_py:
             adversarial_cmd.extend(["--argos-py", args.argos_py])
-        if args.adversarial_sota_live:
-            adversarial_cmd.append("--sota-live")
-        run(adversarial_cmd, timeout=180 if not args.adversarial_sota_live else 300)
+        if args.adversarial_research_live:
+            adversarial_cmd.append("--research-live")
+        run(adversarial_cmd, timeout=180 if not args.adversarial_research_live else 300)
 
-    if args.sota:
-        sota_cmd = [
-            "argos", "sota", "retrieval augmented generation evaluation",
+    if args.research:
+        research_cmd = [
+            "argos", "research", "retrieval augmented generation evaluation",
+            "--profile", "evidence",
             "--source", "arxiv", "--max-queries", "2", "--max-sources", "4",
             "--timeout", "60", "--no-model", "--json",
         ]
         if args.artifact_root:
-            sota_cmd.extend(["--artifact-root", args.artifact_root])
-        proc = run(sota_cmd, timeout=120, check=False)
-        # SOTA may return EXIT_ERROR (2) for degraded/empty retrieval while still
+            research_cmd.extend(["--artifact-root", args.artifact_root])
+        proc = run(research_cmd, timeout=120, check=False)
+        # Research may return EXIT_ERROR (2) for degraded/empty retrieval while still
         # producing diagnostic artifacts; parse and validate the artifact contract below.
         if proc.returncode not in {0, 2}:
-            raise SystemExit(f"argos sota smoke crashed ({proc.returncode})")
-        payload = parse_json_output(proc, "argos sota smoke")
+            raise SystemExit(f"argos research smoke crashed ({proc.returncode})")
+        payload = parse_json_output(proc, "argos research smoke")
         artifact = Path(payload["artifact_dir"])
-        if payload.get("mode") != "sota" or not (artifact / "report.md").exists():
-            raise SystemExit("argos sota smoke did not produce expected artifacts")
+        if payload.get("mode") != "research" or not (artifact / "report.md").exists():
+            raise SystemExit("argos research smoke did not produce expected artifacts")
     print("Argos-Tools smoke: PASS")
     return 0
 

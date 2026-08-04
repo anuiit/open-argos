@@ -10,7 +10,7 @@ Rules:
 - Bump the SemVer prefix only when the plugin behavior/docs/skills change.
 - Use `plugin-creator/scripts/update_plugin_cachebuster.py` to refresh the suffix while iterating locally.
 - Do not edit Codex installed cache directories; edit `~/plugins/argos-tools` and reinstall.
-- Keep argos CLI compatibility explicit in README and `$argos-doctor`.
+- Keep argos CLI compatibility explicit in README and `argos doctor`.
 - After reinstall, use a new Codex thread to pick up changed skills/tools.
 
 Recommended update loop:
@@ -25,6 +25,6 @@ python3 ~/plugins/argos-tools/scripts/smoke_argos_tools.py
 
 Windows notes:
 
-- Experimental native Windows shims depend on `argos >= 0.6.0`; real native Windows validation is still required before calling it fully supported.
+- Native Windows compatibility depends on `argos >= 0.6.0`; use `argos doctor` to confirm whether a successful live run has validated the current host.
 - WSL remains the most predictable install surface when provider CLIs differ between Windows and Linux.
 - A repo-local marketplace on Windows should use the same Codex marketplace JSON shape; paths are normal Windows paths when run from native Windows, and `/mnt/<drive>/...` when run from WSL.

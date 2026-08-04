@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Require public release metadata
+        run: |
+          test -f LICENSE || { echo "::error::The project LICENSE is missing from this release commit."; exit 1; }
+      - name: Verify tag matches the product version
+        if: github.ref_type == 'tag'
+        shell: python
+        run: |
+          import os
+          from argos import VERSION
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          expected = f"v{VERSION}"
+          if tag != expected:
+              raise SystemExit(f"tag {tag!r} does not match {expected!r}")
+      - name: Install release tools
+        run: python -m pip install --disable-pip-version-check "build==1.2.2.post1" "pytest==9.1.1" "ruff==0.9.2" "mcp==2.0.0" "uv==0.11.25" "tomli==2.4.1; python_version < '3.11'"
+      - name: Run release gate
+        run: |
+          python -m ruff check .
+          python -m compileall -q argos
+          python -m pytest -q
+      - name: Build distributions
+        run: |
+          python -m build
+          python scripts/verify_distribution.py dist
+      - name: Smoke-test wheel
+        run: |
+          python -m venv /tmp/open-argos-release-smoke
+          /tmp/open-argos-release-smoke/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
+          expected_version="$(python -c 'from argos import VERSION; print(f"argos {VERSION}")')"
+          test "$(/tmp/open-argos-release-smoke/bin/argos --version)" = "$expected_version"
+          cd /tmp
+          /tmp/open-argos-release-smoke/bin/python -P -c "import argos, argos.mcp_launcher, argos.mcp_runtime; assert argos.__file__.startswith('/tmp/open-argos-release-smoke'), argos.__file__"
+      - name: Write checksums
+        run: sha256sum dist/* > SHA256SUMS
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/*
+            SHA256SUMS

@@ -1,0 +1,11 @@
+include README.md README.fr.md CHANGELOG.md CONTRIBUTING.md SECURITY.md LICENSE
+include docs/MCP_INSTALL.md docs/COMPATIBILITY.md
+prune argos/tests
+prune argos-tools
+prune benchmarks
+prune bin
+prune scripts
+prune tests
+exclude BENCHLOG.md
+exclude ETAT_DES_LIEUX-*.md
+exclude uv.lock

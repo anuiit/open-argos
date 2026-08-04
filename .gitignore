@@ -1,12 +1,22 @@
 .argos/
+.argos-locks/
 .config/argos-dev/.env
 .native-windows-validated.json
 __pycache__/
+.tmp/
 *.pyc
+.venv/
+uv.lock
+build/
+dist/
+*.egg-info/
+.coverage*
+htmlcov/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 *.bak*
 
 .omc/
+.omx/
 benchmarks/results/

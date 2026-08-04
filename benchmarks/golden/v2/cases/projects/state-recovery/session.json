@@ -1,0 +1,14 @@
+{
+  "session_id": "adv_example",
+  "status": "active",
+  "turn": 2,
+  "last_good_turn": 2,
+  "last_turn_status": "completed",
+  "active_turn": {
+    "turn": 3,
+    "pid": 999999,
+    "started_at": "2026-07-30T10:00:00+00:00",
+    "argoses": ["fable", "kimi3"]
+  },
+  "events": []
+}

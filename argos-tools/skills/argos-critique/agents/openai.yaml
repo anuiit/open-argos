@@ -1,0 +1,4 @@
+interface:
+  display_name: "Argos Critique"
+  short_description: "Adversarial critique focused on blockers and risks"
+  default_prompt: "Utilise $argos-critique pour une critique adversariale ciblée sur ce diff ou cette décision."

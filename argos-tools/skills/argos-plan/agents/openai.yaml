@@ -1,0 +1,4 @@
+interface:
+  display_name: "Argos Plan"
+  short_description: "Planning workflow with light/medium/high profiles"
+  default_prompt: "Utilise $argos-plan avec le profil indiqué pour planifier l'implémentation et cadrer les risques."
