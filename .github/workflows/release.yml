@@ -49,8 +49,10 @@ jobs:
         run: |
           python -m venv /tmp/open-argos-release-smoke
           /tmp/open-argos-release-smoke/bin/python -m pip install --disable-pip-version-check --no-deps dist/*.whl
-          /tmp/open-argos-release-smoke/bin/argos --version
-          /tmp/open-argos-release-smoke/bin/python -c "import argos.mcp_launcher; import argos.mcp_runtime"
+          expected_version="$(python -c 'from argos import VERSION; print(f"argos {VERSION}")')"
+          test "$(/tmp/open-argos-release-smoke/bin/argos --version)" = "$expected_version"
+          cd /tmp
+          /tmp/open-argos-release-smoke/bin/python -P -c "import argos, argos.mcp_launcher, argos.mcp_runtime; assert argos.__file__.startswith('/tmp/open-argos-release-smoke'), argos.__file__"
       - name: Write checksums
         run: sha256sum dist/* > SHA256SUMS
       - name: Create GitHub release

@@ -32,9 +32,7 @@ def test_distribution_metadata_exposes_only_runtime_package() -> None:
         "argos-mcp": "argos.mcp_launcher:main",
     }
     assert "dependencies" not in metadata["project"]
-    assert metadata["tool"]["setuptools"]["packages"]["find"]["include"] == [
-        "argos"
-    ]
+    assert metadata["tool"]["setuptools"]["packages"]["find"]["include"] == ["argos"]
 
 
 def test_core_and_package_versions_share_one_source() -> None:
@@ -65,6 +63,35 @@ def test_release_workflow_cannot_publish_without_a_license() -> None:
 
     assert "test -f LICENSE" in workflow
     assert "softprops/action-gh-release@v3" in workflow
+    assert "generate_release_notes: true" in workflow
+    assert "expected_version=" in workflow
+    assert "bin/python -P -c" in workflow
+    assert "GITHUB_REF_NAME" in workflow
+    assert "does not match" in workflow
+
+    test_index = workflow.index("python -m pytest -q")
+    build_index = workflow.index("python -m build")
+    verify_index = workflow.index("python scripts/verify_distribution.py dist")
+    smoke_index = workflow.index("open-argos-release-smoke")
+    publish_index = workflow.index("softprops/action-gh-release@v3")
+    assert test_index < build_index < verify_index < smoke_index < publish_index
+
+
+def test_ci_publishes_the_exact_candidate_distributions() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "actions/upload-artifact@v4" in workflow
+    assert "name: open-argos-dist" in workflow
+    assert "path: dist/*" in workflow
+    assert "if-no-files-found: error" in workflow
+    assert "--no-deps dist/*.whl" in workflow
+    assert "expected_version=" in workflow
+    assert "bin/python -P -c" in workflow
+
+    verify_index = workflow.index("python scripts/verify_distribution.py dist")
+    install_index = workflow.index("--no-deps dist/*.whl")
+    upload_index = workflow.index("uses: actions/upload-artifact@v4")
+    assert verify_index < install_index < upload_index
 
 
 def test_sdist_manifest_excludes_internal_quality_payloads() -> None:
@@ -73,7 +100,10 @@ def test_sdist_manifest_excludes_internal_quality_payloads() -> None:
     for directory in ("argos/tests", "argos-tools", "benchmarks", "scripts", "tests"):
         assert f"prune {directory}" in manifest
     assert "exclude BENCHLOG.md" in manifest
+    assert "exclude uv.lock" in manifest
     assert "LICENSE" in manifest.splitlines()[0]
+
+    assert "uv.lock" in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
 
 def test_public_install_surfaces_do_not_embed_maintainer_paths() -> None:

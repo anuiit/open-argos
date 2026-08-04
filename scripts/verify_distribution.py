@@ -17,7 +17,7 @@ FORBIDDEN_PARTS = {
     "benchmarks",
     "tests",
 }
-FORBIDDEN_NAMES = {"BENCHLOG.md", "ETAT_DES_LIEUX-20260721.md"}
+FORBIDDEN_NAMES = {"BENCHLOG.md", "ETAT_DES_LIEUX-20260721.md", "uv.lock"}
 REQUIRED_RUNTIME = {
     "argos/__init__.py",
     "argos/_version.py",
