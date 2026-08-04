@@ -1476,11 +1476,19 @@ class ArgosMCPAdapter:
             namespace, _ = prepared
             code, payload = await core.run_mode(namespace, return_payload=True)
             artifact_dir = self._relative_artifact(payload["artifact_dir"])
-            final, truncated = self._read_text(
-                Path(payload["artifact_dir"]) / "final.md",
-                root=Path(payload["artifact_dir"]),
-                limit=MAX_INLINE_TEXT,
+            ok_count = sum(
+                1
+                for row in payload.get("results") or []
+                if isinstance(row, dict) and row.get("status") == "ok"
             )
+            if ok_count:
+                final, truncated = self._read_text(
+                    Path(payload["artifact_dir"]) / "final.md",
+                    root=Path(payload["artifact_dir"]),
+                    limit=MAX_INLINE_TEXT,
+                )
+            else:
+                final, truncated = "", False
             result = {
                 "mode": str(payload.get("mode") or ""),
                 "profile": request.profile.value,
@@ -1498,11 +1506,6 @@ class ArgosMCPAdapter:
                     f"argos://runs/{request.request_id}/manifest"
                 ),
             }
-            ok_count = sum(
-                1
-                for row in payload.get("results") or []
-                if isinstance(row, dict) and row.get("status") == "ok"
-            )
             if not ok_count:
                 return self._provider_failure(
                     request.request_id,
@@ -1550,11 +1553,19 @@ class ArgosMCPAdapter:
             code, payload = await core.start_mode(namespace, return_payload=True)
             session_id = str(payload["session_id"])
             artifact_dir = self._relative_artifact(payload["artifact_dir"])
-            final, truncated = self._read_text(
-                Path(payload["turn_dir"]) / "final.md",
-                root=Path(payload["artifact_dir"]),
-                limit=MAX_INLINE_TEXT,
+            ok_count = sum(
+                1
+                for row in payload.get("results") or []
+                if isinstance(row, dict) and row.get("status") == "ok"
             )
+            if ok_count:
+                final, truncated = self._read_text(
+                    Path(payload["turn_dir"]) / "final.md",
+                    root=Path(payload["artifact_dir"]),
+                    limit=MAX_INLINE_TEXT,
+                )
+            else:
+                final, truncated = "", False
             result = {
                 "turn": int(payload.get("turn") or 1),
                 "mode": str(payload.get("mode") or ""),
@@ -1566,11 +1577,6 @@ class ArgosMCPAdapter:
                 ),
                 "history_resource": f"argos://sessions/{session_id}/summary",
             }
-            ok_count = sum(
-                1
-                for row in payload.get("results") or []
-                if isinstance(row, dict) and row.get("status") == "ok"
-            )
             if not ok_count:
                 return self._provider_failure(
                     request.request_id,
@@ -1619,11 +1625,19 @@ class ArgosMCPAdapter:
             async with self._session_guard(request.session_id):
                 code, payload = await core.ask_mode(namespace, return_payload=True)
             artifact_dir = self._relative_artifact(payload["artifact_dir"])
-            final, truncated = self._read_text(
-                Path(payload["turn_dir"]) / "final.md",
-                root=Path(payload["artifact_dir"]),
-                limit=MAX_INLINE_TEXT,
+            ok_count = sum(
+                1
+                for row in payload.get("results") or []
+                if isinstance(row, dict) and row.get("status") == "ok"
             )
+            if ok_count:
+                final, truncated = self._read_text(
+                    Path(payload["turn_dir"]) / "final.md",
+                    root=Path(payload["artifact_dir"]),
+                    limit=MAX_INLINE_TEXT,
+                )
+            else:
+                final, truncated = "", False
             result = {
                 "turn": int(payload.get("turn") or 0),
                 "profile": request.profile.value,
@@ -1636,11 +1650,6 @@ class ArgosMCPAdapter:
                     f"argos://sessions/{request.session_id}/summary"
                 ),
             }
-            ok_count = sum(
-                1
-                for row in payload.get("results") or []
-                if isinstance(row, dict) and row.get("status") == "ok"
-            )
             if not ok_count:
                 return self._provider_failure(
                     request.request_id,

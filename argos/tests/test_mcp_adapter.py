@@ -213,6 +213,44 @@ class AdapterTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["artifact_dir"], ".argos/mcp/runs/review-test")
         self.assertEqual(stdout.getvalue(), "")
 
+    async def test_zero_ok_run_keeps_provider_failure_when_final_is_absent(self) -> None:
+        cases = (
+            (False, "provider unavailable", "provider_unavailable"),
+            (True, "Timed out after 5s", "provider_timeout"),
+        )
+        for index, (write_final, error, expected_class) in enumerate(cases):
+            async def failed_run(namespace, *, return_payload=False):
+                artifact = Path(namespace.artifact_root) / f"review-failed-{index}"
+                artifact.mkdir(parents=True, exist_ok=True)
+                if write_final:
+                    (artifact / "final.md").write_text(
+                        "must not leak",
+                        encoding="utf-8",
+                    )
+                payload = {
+                    "mode": "review",
+                    "artifact_dir": str(artifact),
+                    "results": [
+                        {
+                            "argos": "fable",
+                            "status": "error",
+                            "content": "",
+                            "error": error,
+                        }
+                    ],
+                    "findings": None,
+                }
+                return core.EXIT_ERROR, payload
+
+            with self.subTest(expected_class=expected_class):
+                with patch.object(core, "run_mode", side_effect=failed_run):
+                    response = await self.adapter.argos_run(
+                        self.run_request(request_id=f"req-failed-{index}")
+                    )
+
+                self.assertEqual(response["error"]["class"], expected_class)
+                self.assertEqual(response["result"]["final_text"], "")
+
     async def test_outside_traversal_ads_and_absolute_paths_are_rejected(self) -> None:
         outside = Path(self.temp.name).parent / "outside-mcp.txt"
         outside.write_text("outside", encoding="utf-8")
