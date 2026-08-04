@@ -1,6 +1,6 @@
 # Pre-1.0 release status
 
-Snapshot: 2026-08-03
+Snapshot: 2026-08-04
 Candidate: `0.9.0-rc1` (`0.9.0rc1` in Python metadata)
 Branch: `codex/argos-reliability-hardening`
 
@@ -8,13 +8,13 @@ Branch: `codex/argos-reliability-hardening`
 
 The repository now produces a coherent local release candidate. Runtime,
 package, documentation, context-egress, and deterministic MCP gates pass on the
-current native Windows host. It is **not yet a public tag**: licensing, first
-remote CI, clean WSL/Windows host registration, and a bounded live provider
-smoke remain release gates.
+current native Windows host. It is **not yet a public tag**: first remote CI,
+clean WSL/Windows host registration, and a bounded live provider smoke remain
+release gates.
 
 Latest evidence:
 
-- `415 passed, 6 skipped, 58 subtests passed` with the base environment;
+- `416 passed, 6 skipped, 58 subtests passed` with the base environment;
 - MCP SDK lane: `48 passed, 2 skipped` with `mcp==2.0.0`;
 - Ruff, byte-compilation, PowerShell installer parsing, and `git diff --check`
   pass;
@@ -28,8 +28,8 @@ Latest evidence:
 
 ## Git state and integration
 
-The branch remains five linear commits ahead of `main`/`origin/main`, with no
-commit divergence at the audited snapshot:
+The branch remains a linear release series ahead of `main`/`origin/main`, with
+no commit divergence at the audited snapshot:
 
 | Commit | Scope | RC disposition |
 | --- | --- | --- |
@@ -38,10 +38,11 @@ commit divergence at the audited snapshot:
 | `fd4b755` | Focused plugin surface | Migration routes and changelog now documented; plugin candidate is `0.5.2-rc.1`. |
 | `9fe3060` | Benchmark v2 harness/corpus | Keep as quality infrastructure; distribution verifier excludes it from wheel/sdist. |
 | `bb40b51` | Long OpenCode event abort | Ready with focused regression coverage. |
+| `46b1a21` | Installable pre-1.0 candidate | Locally verified; remote and clean-host gates remain. |
 
-The release preparation changes are still uncommitted in this working tree.
-They should become a reviewable release-preparation commit after the remaining
-local review, then merge through a pull request. Do not tag the feature branch.
+The technical release preparation is committed. The MIT metadata completes the
+local licensing gate. Merge through a reviewed pull request and do not tag the
+feature branch.
 
 ## What the RC now includes
 
@@ -76,6 +77,7 @@ local review, then merge through a pull request. Do not tag the feature branch.
 - deprecated plugin skills mapped to current routes;
 - stale unrelated `ETAT_DES_LIEUX-20260721.md` removed;
 - obsolete post-rename migration/promotion/mirror scripts removed;
+- MIT license declared in source and Python package metadata;
 - personal installation paths removed from primary user instructions.
 
 ### Minimal context egress
@@ -96,7 +98,6 @@ Every run retains an `inputs_report` with included/skipped paths and limits.
 
 ### Blocking
 
-- [ ] The project owner selects and adds a `LICENSE`.
 - [ ] The pull request runs the new GitHub Actions matrix successfully.
 - [ ] A clean native Windows install completes `pipx install .` or
   `uv tool install .`, `argos doctor`, `argos-mcp --prepare`, and one host
@@ -141,7 +142,7 @@ security fixes.
 - supported Windows, WSL/Linux, Codex, and Claude Code matrix passes on clean
   machines;
 - install, update, rollback, and uninstall are automated and tested;
-- license and trusted registry publication/provenance are in place;
+- trusted registry publication/provenance is in place;
 - compatibility, deprecation, support, and security promises are public;
 - two or three external beta users install and complete a real workflow without
   maintainer intervention;

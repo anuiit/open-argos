@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
       - name: Require public release metadata
         run: |
-          test -f LICENSE || { echo "::error::Choose and add a project LICENSE before publishing."; exit 1; }
+          test -f LICENSE || { echo "::error::The project LICENSE is missing from this release commit."; exit 1; }
       - name: Verify tag matches the product version
         if: github.ref_type == 'tag'
         shell: python

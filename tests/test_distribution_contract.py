@@ -23,6 +23,9 @@ def test_distribution_metadata_exposes_only_runtime_package() -> None:
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert metadata["project"]["name"] == "open-argos"
+    assert metadata["build-system"]["requires"] == ["setuptools>=77"]
+    assert metadata["project"]["license"] == "MIT"
+    assert metadata["project"]["license-files"] == ["LICENSE"]
     assert metadata["project"]["dynamic"] == ["version"]
     assert metadata["project"]["scripts"] == {
         "argos": "argos.argos:cli_main",
@@ -43,6 +46,18 @@ def test_core_and_package_versions_share_one_source() -> None:
     assert core.VERSION == VERSION
 
 
+def test_mit_license_uses_the_canonical_grant_and_disclaimer() -> None:
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    normalized = " ".join(license_text.split())
+
+    assert license_text.startswith(
+        "MIT License\n\nCopyright (c) 2026 Open Argos contributors\n"
+    )
+    assert "Permission is hereby granted, free of charge" in normalized
+    assert "included in all copies or substantial portions" in normalized
+    assert 'THE SOFTWARE IS PROVIDED "AS IS"' in normalized
+
+
 def test_release_workflow_cannot_publish_without_a_license() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
@@ -58,6 +73,7 @@ def test_sdist_manifest_excludes_internal_quality_payloads() -> None:
     for directory in ("argos/tests", "argos-tools", "benchmarks", "scripts", "tests"):
         assert f"prune {directory}" in manifest
     assert "exclude BENCHLOG.md" in manifest
+    assert "LICENSE" in manifest.splitlines()[0]
 
 
 def test_public_install_surfaces_do_not_embed_maintainer_paths() -> None:

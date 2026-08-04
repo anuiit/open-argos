@@ -46,6 +46,15 @@ def _verify_members(paths: set[str], archive: Path) -> None:
             raise SystemExit(f"forbidden release payload in {archive.name}: {raw}")
 
 
+def _is_wheel_license(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) >= 3
+        and parts[-2:] == ("licenses", "LICENSE")
+        and parts[-3].endswith(".dist-info")
+    )
+
+
 def verify_wheel(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         members = _relative_archive_paths(archive.namelist(), strip_root=False)
@@ -53,13 +62,16 @@ def verify_wheel(path: Path) -> None:
     missing = REQUIRED_RUNTIME.difference(members)
     if missing:
         raise SystemExit(f"wheel is missing runtime files: {sorted(missing)}")
+    license_members = {member for member in members if _is_wheel_license(member)}
+    if len(license_members) != 1:
+        raise SystemExit(f"wheel must contain one MIT LICENSE: {license_members}")
 
 
 def verify_sdist(path: Path) -> None:
     with tarfile.open(path, "r:gz") as archive:
         members = _relative_archive_paths(archive.getnames(), strip_root=True)
     _verify_members(members, path)
-    missing = REQUIRED_RUNTIME.difference(members)
+    missing = (REQUIRED_RUNTIME | {"LICENSE"}).difference(members)
     if missing:
         raise SystemExit(f"sdist is missing runtime files: {sorted(missing)}")
 

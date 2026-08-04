@@ -35,6 +35,11 @@ Describe user impact, compatibility/migration consequences, verification, and
 known gaps in the pull request. Do not include provider credentials, private
 prompts, or generated model artifacts.
 
+## Contributions and license
+
+By submitting a contribution, you confirm that you have the right to do so and
+agree that it may be distributed under the project's [MIT License](LICENSE).
+
 ## Release discipline
 
 `main` must stay releasable. A release tag is created only from a green,

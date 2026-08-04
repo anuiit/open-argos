@@ -3,6 +3,7 @@
 .config/argos-dev/.env
 .native-windows-validated.json
 __pycache__/
+.tmp/
 *.pyc
 .venv/
 build/

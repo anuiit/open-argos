@@ -144,6 +144,10 @@ instead of being duplicated inside each client.
 Read [the compatibility policy](docs/COMPATIBILITY.md) before automating around
 CLI output or artifact schemas.
 
+## License
+
+Open Argos is distributed under the [MIT License](LICENSE).
+
 ## Development
 
 ```bash

@@ -68,3 +68,7 @@ le lancement.
 
 Le README anglais reste la référence pour les commandes, les noms de champs et
 les contrats machine. Les guides français sont des traductions d’usage.
+
+## Licence
+
+Open Argos est distribué sous [licence MIT](LICENSE).

@@ -29,6 +29,7 @@ example `0.9.0rc1`).
 - Cross-platform CI and a tag-driven GitHub release gate with clean-install
   smoke tests and checksums.
 - English canonical documentation plus a French quick-start.
+- MIT licensing declared in the repository and Python distribution metadata.
 
 ### Fixed
 
@@ -58,7 +59,5 @@ example `0.9.0rc1`).
 
 - Provider CLIs remain external prerequisites and may require writable state
   directories of their own.
-- The first public package publication is blocked until the project owner
-  selects and adds a license.
 - No comparative "Argos beats Codex" metric is claimed yet; the controlled A/B
   showcase protocol is documented but still needs execution.

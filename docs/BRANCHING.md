@@ -23,8 +23,9 @@ release trains or multiple supported versions create a concrete need.
    wheel and source archive, writes checksums, and creates a GitHub pre-release
    when the tag contains `-`.
 
-The release workflow deliberately fails when `LICENSE` is absent. Registry
-publication is a separate opt-in step and is not enabled for the first RC.
+Open Argos is distributed under the MIT License. The release workflow
+deliberately fails if `LICENSE` is missing. Registry publication is a separate
+opt-in step and is not enabled for the first RC.
 
 ## Hotfixes
 
