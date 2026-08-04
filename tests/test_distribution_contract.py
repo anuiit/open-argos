@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 try:
@@ -79,6 +82,44 @@ def test_release_workflow_cannot_publish_without_a_license() -> None:
     smoke_index = workflow.index("open-argos-release-smoke")
     publish_index = workflow.index("softprops/action-gh-release@v3")
     assert test_index < build_index < verify_index < smoke_index < publish_index
+
+
+def test_release_tag_gate_imports_the_checkout_from_a_temp_script(tmp_path) -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    step = workflow.split("      - name: Verify tag matches the product version", 1)[1]
+    run_block = step.split("        run: |\n", 1)[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(run_block)
+    script_path = tmp_path / "tag_gate.py"
+    script_path.write_text(script, encoding="utf-8")
+
+    env = os.environ.copy()
+    env["GITHUB_WORKSPACE"] = str(ROOT)
+    env["GITHUB_REF_NAME"] = "v0.9.0-rc1"
+    completed = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+    env["GITHUB_REF_NAME"] = "v0.9.0-rc2"
+    mismatch = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert mismatch.returncode != 0
+    assert "does not match" in mismatch.stderr
 
 
 def test_ci_publishes_the_exact_candidate_distributions() -> None:
