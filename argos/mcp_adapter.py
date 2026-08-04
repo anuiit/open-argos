@@ -1340,6 +1340,7 @@ class ArgosMCPAdapter:
         self,
         request: contract.RunRequest,
     ) -> tuple[argparse.Namespace, dict[str, Any]]:
+        context = self._prepare_context(request)
         cfg = self._load_config()
         mode, argoses, _ = core.resolve_mode_and_argoses(
             request.mode.value,
@@ -1349,7 +1350,6 @@ class ArgosMCPAdapter:
         resolved = list(argoses or [])
         self._require_allowed_argoses(resolved, cfg)
         core.enforce_argos_minimum(mode, resolved, bool(request.providers), cfg)
-        context = self._prepare_context(request)
         namespace = self._base_namespace(
             request,
             context,
@@ -1362,6 +1362,7 @@ class ArgosMCPAdapter:
         self,
         request: contract.StartRequest,
     ) -> tuple[argparse.Namespace, dict[str, Any]]:
+        context = self._prepare_context(request)
         cfg = self._load_config()
         requested_mode = (request.mode or contract.SessionMode.council).value
         mode, argoses, _ = core.resolve_mode_and_argoses(
@@ -1372,7 +1373,6 @@ class ArgosMCPAdapter:
         resolved = list(argoses or [])
         self._require_allowed_argoses(resolved, cfg)
         core.enforce_argos_minimum(mode, resolved, bool(request.providers), cfg)
-        context = self._prepare_context(request)
         namespace = self._base_namespace(
             request,
             context,

@@ -550,6 +550,15 @@ class ArtifactTests(IsolatedRuntimeRootsTestCase):
                 self.assertTrue(latest.exists())
                 self.assertEqual(latest.read_text(encoding="utf-8"), str(second))
 
+    def test_latest_pointer_falls_back_to_text_when_symlinks_are_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as td, (
+            mock.patch.object(argos, "IS_WINDOWS", False)
+        ), mock.patch.object(Path, "symlink_to", side_effect=PermissionError):
+            root = Path(td)
+            artifact = argos.make_artifact_dir(root, "review")
+            latest = root / "latest-review"
+            self.assertEqual(latest.read_text(encoding="utf-8"), str(artifact))
+
 
 class SubprocessTimeoutTests(IsolatedRuntimeRootsTestCase):
 
@@ -805,20 +814,23 @@ class CrossProcessConcurrencyTests(IsolatedRuntimeRootsTestCase):
                 self.fail(
                     f"holder failed to acquire lock: rc={holder.returncode}, stdout={stdout!r}, stderr={stderr!r}"
                 )
-            contender = subprocess.run(
-                [sys.executable, "-c", contender_script],
-                cwd=root,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            holder.terminate()
             try:
-                holder.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                holder.kill()
-                holder.wait(timeout=5)
+                contender = subprocess.run(
+                    [sys.executable, "-c", contender_script],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            finally:
+                if holder.poll() is None:
+                    holder.terminate()
+                try:
+                    holder.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    holder.kill()
+                    holder.communicate(timeout=5)
 
         self.assertNotEqual(contender.returncode, 0)
         self.assertTrue(

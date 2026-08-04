@@ -12,7 +12,16 @@ import importlib.util
 import json
 import re
 import sys
-from enum import StrEnum
+try:
+    from enum import StrEnum
+except ImportError:  # pragma: no cover - Python 3.10 compatibility
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        """Minimal stdlib-compatible StrEnum fallback for Python 3.10."""
+
+        def __str__(self) -> str:
+            return self.value
 from pathlib import Path, PurePosixPath
 from typing import Any, Generic, Literal, TypeVar
 

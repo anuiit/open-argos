@@ -1513,7 +1513,9 @@ def stage_vision_images(artifact_dir: Path, images: list[Path] | None) -> list[P
     for idx, image in enumerate(images, start=1):
         resolved_image = image.resolve()
         if resolved_image.is_relative_to(staged_root_resolved):
-            staged.append(resolved_image)
+            staged.append(
+                staged_root / resolved_image.relative_to(staged_root_resolved)
+            )
             continue
         suffix = image.suffix.lower() or mimetypes.guess_extension(mime_for(image)) or ".img"
         digest = hashlib.sha256(str(image).encode()).hexdigest()[:10]
@@ -1532,7 +1534,7 @@ def stage_agy_prompt(artifact_dir: Path, prompt: str) -> Path:
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
     target = staged_root / f"prompt_{digest}.md"
     atomic_write_text(target, prompt)
-    return target.resolve()
+    return target
 
 
 def truncate_prompt_total(prompt: str, cfg: dict[str, Any]) -> str:
@@ -2242,13 +2244,19 @@ def build_agy_command(
     return cmd, "agy --print-timeout <timeout> --add-dir <staged-input-dir> --print <staged-prompt-reference>", timeout + 5
 
 
+def _command_executable_name(command: str) -> str:
+    """Return a provider executable stem independent of host path syntax."""
+    exe = Path(command.replace("\\", "/")).name.lower()
+    for suffix in (".exe", ".cmd", ".bat"):
+        exe = exe.removesuffix(suffix)
+    return exe
+
+
 def _subprocess_env(cmd: list[str], cwd: Path) -> dict[str, str]:
     env = os.environ.copy()
     if not cmd:
         return env
-    exe = Path(cmd[0]).name.lower()
-    for suffix in (".exe", ".cmd", ".bat"):
-        exe = exe.removesuffix(suffix)
+    exe = _command_executable_name(cmd[0])
     if IS_WINDOWS and exe == "claude":
         # A background updater can inherit the provider cwd and keep it locked
         # after a completed non-interactive call on Windows.
@@ -2416,9 +2424,7 @@ async def _run_opencode_stream(
 
 async def run_subprocess(cmd: list[str], timeout: float, cwd: Path | None = None, input_text: str | None = None) -> tuple[int, str, str, float]:
     assert_allowed_subprocess(cmd)
-    original_exe = Path(cmd[0]).name.lower() if cmd else ""
-    for suffix in (".exe", ".cmd", ".bat"):
-        original_exe = original_exe.removesuffix(suffix)
+    original_exe = _command_executable_name(cmd[0]) if cmd else ""
     cmd = resolve_windows_executable(cmd)
     run_cwd = cwd or Path.cwd()
     env = _subprocess_env(cmd, run_cwd)
@@ -3368,27 +3374,30 @@ def make_artifact_dir(root: Path, mode: str) -> Path:
             break
         except FileExistsError:
             path = root / f"{stamp}-{mode}-{uuid.uuid4().hex[:8]}"
+    _update_latest_pointer(root, mode, path)
+    return path
+
+
+def _update_latest_pointer(root: Path, mode: str, path: Path) -> None:
     latest = root / f"latest-{mode}"
+    if latest.exists() or latest.is_symlink():
+        latest.unlink()
+    if IS_WINDOWS:
+        latest.write_text(str(path), encoding="utf-8")
+        return
     try:
+        latest.symlink_to(path, target_is_directory=True)
+    except OSError:
         if latest.exists() or latest.is_symlink():
             latest.unlink()
-        latest.symlink_to(path, target_is_directory=True)
-    except Exception:
         latest.write_text(str(path), encoding="utf-8")
-    return path
 
 
 def ensure_artifact_dir(root: Path, mode: str, explicit: str | None = None) -> Path:
     if explicit:
         path = Path(explicit).expanduser().resolve()
         secure_mkdir(path)
-        latest = root / f"latest-{mode}"
-        try:
-            if latest.exists() or latest.is_symlink():
-                latest.unlink()
-            latest.symlink_to(path, target_is_directory=True)
-        except Exception:
-            latest.write_text(str(path), encoding="utf-8")
+        _update_latest_pointer(root, mode, path)
         return path
     return make_artifact_dir(root, mode)
 

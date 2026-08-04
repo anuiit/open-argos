@@ -8,7 +8,7 @@ backward-aware, and demonstrably bounded.
 ```bash
 git clone https://github.com/anuiit/open-argos.git
 cd open-argos
-python -m pip install "pytest==9.1.1" "ruff==0.9.2" "build==1.2.2.post1" "mcp==2.0.0"
+python -m pip install "pytest==9.1.1" "ruff==0.9.2" "build==1.2.2.post1" "mcp==2.0.0" "uv==0.11.25" "tomli==2.4.1; python_version < '3.11'"
 python -m pytest -q
 ```
 

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-import tomllib
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised by Python 3.10 CI
+    import tomli as tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,7 +104,13 @@ def test_ci_and_release_pin_the_validated_quality_toolchain() -> None:
         encoding="utf-8"
     )
 
-    for pin in ("pytest==9.1.1", "ruff==0.9.2", "build==1.2.2.post1"):
+    for pin in (
+        "pytest==9.1.1",
+        "ruff==0.9.2",
+        "build==1.2.2.post1",
+        "uv==0.11.25",
+        "tomli==2.4.1",
+    ):
         assert pin in ci
         assert pin in release
 

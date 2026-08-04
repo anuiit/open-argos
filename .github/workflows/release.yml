@@ -35,7 +35,7 @@ jobs:
           if tag != expected:
               raise SystemExit(f"tag {tag!r} does not match {expected!r}")
       - name: Install release tools
-        run: python -m pip install --disable-pip-version-check "build==1.2.2.post1" "pytest==9.1.1" "ruff==0.9.2" "mcp==2.0.0"
+        run: python -m pip install --disable-pip-version-check "build==1.2.2.post1" "pytest==9.1.1" "ruff==0.9.2" "mcp==2.0.0" "uv==0.11.25" "tomli==2.4.1; python_version < '3.11'"
       - name: Run release gate
         run: |
           python -m ruff check .
