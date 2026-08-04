@@ -668,7 +668,7 @@ class ArgosResult:
 
 
 def utc_now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat()
+    return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -767,7 +767,7 @@ def atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
 
 
 def unique_backup_path(path: Path) -> Path:
-    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     base = path.with_name(f"{path.name}.bak.{stamp}")
     candidate = base
     while candidate.exists():
@@ -3004,10 +3004,32 @@ class CrossProcessSlots:
                 except BlockingIOError:
                     handle.close()
                     continue
-                handle.seek(0)
-                handle.truncate()
-                handle.write((json.dumps({"pid": os.getpid(), "name": name, "slot": slot, "acquired_at": utc_now()}) + "\n").encode())
-                handle.flush()
+                except Exception:
+                    handle.close()
+                    raise
+                try:
+                    handle.seek(0)
+                    handle.truncate()
+                    handle.write(
+                        (
+                            json.dumps(
+                                {
+                                    "pid": os.getpid(),
+                                    "name": name,
+                                    "slot": slot,
+                                    "acquired_at": utc_now(),
+                                }
+                            )
+                            + "\n"
+                        ).encode()
+                    )
+                    handle.flush()
+                except Exception:
+                    try:
+                        file_unlock(handle)
+                    finally:
+                        handle.close()
+                    raise
                 self.handles.append(handle)
                 return
             if time.monotonic() >= deadline:

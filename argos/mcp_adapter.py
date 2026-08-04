@@ -415,6 +415,21 @@ class ArgosMCPAdapter:
                 ErrorClass.path_outside_workspace,
                 "The requested path is outside the allowed workspace.",
             ) from exc
+        try:
+            lexical_relative = candidate.relative_to(self.workspace)
+        except ValueError as exc:
+            raise AdapterFault(
+                ErrorClass.path_outside_workspace,
+                "The requested path is outside the allowed workspace.",
+            ) from exc
+        current = self.workspace
+        for part in lexical_relative.parts:
+            current = current / part
+            if _is_link_or_reparse(current):
+                raise AdapterFault(
+                    ErrorClass.path_outside_workspace,
+                    "Links and reparse points are not allowed in workspace paths.",
+                )
         current = self.workspace
         for part in relative.parts:
             current = current / part

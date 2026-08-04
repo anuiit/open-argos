@@ -254,6 +254,32 @@ class AdapterTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["error"]["class"], "path_outside_workspace")
 
+    async def test_reparse_context_is_checked_before_resolution(self) -> None:
+        target = self.workspace / "target.txt"
+        target.write_text("target", encoding="utf-8")
+        link = self.workspace / "link.txt"
+        link.write_text("simulated link", encoding="utf-8")
+        real_resolve = Path.resolve
+
+        def resolve_as_target(path: Path, strict: bool = False) -> Path:
+            if path == link:
+                return target
+            return real_resolve(path, strict=strict)
+
+        with (
+            patch.object(Path, "resolve", resolve_as_target),
+            patch.object(
+                mcp_adapter,
+                "_is_link_or_reparse",
+                side_effect=lambda path: path == link,
+            ),
+        ):
+            response = await self.adapter.argos_run(
+                self.run_request(context={"files": ["link.txt"]})
+            )
+
+        self.assertEqual(response["error"]["class"], "path_outside_workspace")
+
     async def test_idempotent_replay_and_conflict_do_not_rerun_core(self) -> None:
         calls = 0
 

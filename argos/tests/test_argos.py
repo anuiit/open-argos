@@ -838,6 +838,28 @@ class CrossProcessConcurrencyTests(IsolatedRuntimeRootsTestCase):
             or "provider concurrency saturated for test_provider (limit=1)" in (contender.stdout + contender.stderr)
         )
 
+    def test_cross_process_slot_closes_handle_when_metadata_write_fails(self) -> None:
+        cfg = argos.deep_merge(
+            argos.DEFAULT_CONFIG,
+            {
+                "concurrency": {
+                    "cross_process": True,
+                    "wait_sec": 0.05,
+                    "test_provider": 1,
+                }
+            },
+        )
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(
+            argos, "utc_now", side_effect=RuntimeError("metadata failed")
+        ):
+            lock_root = Path(td) / "locks"
+            slots = argos.CrossProcessSlots(
+                cfg, [("test_provider", 1)], lock_root=lock_root
+            )
+            with self.assertRaisesRegex(RuntimeError, "metadata failed"):
+                asyncio.run(slots.__aenter__())
+            (lock_root / "test_provider.0.lock").unlink()
+
     def test_cross_process_disabled_bypasses_lock_files(self) -> None:
         cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {
             "concurrency": {

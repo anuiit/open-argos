@@ -92,6 +92,8 @@ def test_ci_publishes_the_exact_candidate_distributions() -> None:
     assert "expected_version=" in workflow
     assert "bin/python -P -c" in workflow
 
+    assert workflow.count("timeout-minutes: 10") == 2
+
     verify_index = workflow.index("python scripts/verify_distribution.py dist")
     install_index = workflow.index("--no-deps dist/*.whl")
     upload_index = workflow.index("uses: actions/upload-artifact@v4")
@@ -103,6 +105,8 @@ def test_ci_and_release_pin_the_validated_quality_toolchain() -> None:
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
+
+    assert "timeout-minutes: 15" in release
 
     for pin in (
         "pytest==9.1.1",
