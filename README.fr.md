@@ -5,7 +5,7 @@ et auditables. Codex ou Claude Code garde le contrôle ; Argos sollicite des CLI
 externes indépendants pour relire, critiquer, planifier, rechercher ou tenir un
 conseil persistant, puis conserve les preuves localement.
 
-Version candidate actuelle : **0.9.0-rc1**.
+Version candidate actuelle : **0.9.1-rc1**.
 
 [Installation MCP](docs/MCP_INSTALL.md) ·
 [Compatibilité](docs/COMPATIBILITY.md) ·

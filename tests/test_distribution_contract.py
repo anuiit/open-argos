@@ -46,8 +46,8 @@ def test_core_and_package_versions_share_one_source() -> None:
     from argos import VERSION, __version__
 
     core = _load_core_module()
-    assert VERSION == "0.9.0-rc1"
-    assert __version__ == "0.9.0rc1"
+    assert VERSION == "0.9.1-rc1"
+    assert __version__ == "0.9.1rc1"
     assert core.VERSION == VERSION
 
 
@@ -96,7 +96,7 @@ def test_release_tag_gate_imports_the_checkout_from_a_temp_script(tmp_path) -> N
 
     env = os.environ.copy()
     env["GITHUB_WORKSPACE"] = str(ROOT)
-    env["GITHUB_REF_NAME"] = "v0.9.0-rc1"
+    env["GITHUB_REF_NAME"] = "v0.9.1-rc1"
     completed = subprocess.run(
         [sys.executable, str(script_path)],
         cwd=tmp_path,
@@ -108,7 +108,7 @@ def test_release_tag_gate_imports_the_checkout_from_a_temp_script(tmp_path) -> N
 
     assert completed.returncode == 0, completed.stderr
 
-    env["GITHUB_REF_NAME"] = "v0.9.0-rc2"
+    env["GITHUB_REF_NAME"] = "v0.9.1-rc2"
     mismatch = subprocess.run(
         [sys.executable, str(script_path)],
         cwd=tmp_path,

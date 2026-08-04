@@ -30,10 +30,14 @@ Operational rules:
    plan: interrupt planning, implementation, or review at the decision point.
 2. Preserve acceptance criteria and decision criteria from the user context.
 3. Keep queries bounded and scoped; report source caveats explicitly when some providers are missing.
+   Argos retrieval is limited to Exa, Tavily, and Brave. Codex native web search
+   remains a separate host capability when available and is never launched by Argos.
 4. Treat evidence IDs (`[E3]`-style references) as primary provenance and report skipped/error sources.
 5. Read `coverage.json` before trusting a model synthesis. If coverage is
    `insufficient`, keep the model skipped unless the user explicitly approves
    `--force-model-on-insufficient`; disclose and preserve that override.
+   Treat low mean topical relevance or too few high-relevance results as
+   insufficient even when the raw result count is non-zero.
 6. Return command + artifact path, and summarize: profile used, top evidence
    signals, alternatives considered, skipped sources, recommendation, and
    confidence caveats.

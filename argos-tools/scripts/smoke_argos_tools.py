@@ -81,7 +81,7 @@ def main() -> int:
         "--sota",
         dest="research",
         action="store_true",
-        help="include retrieval-only argos research smoke over public sources",
+        help="include retrieval-only Argos research smoke over configured API sources",
     )
     parser.add_argument("--adversarial", action="store_true", help="run two break-oriented smoke checks per Argos-Tools/argos feature")
     parser.add_argument(
@@ -138,7 +138,7 @@ def main() -> int:
         research_cmd = [
             "argos", "research", "retrieval augmented generation evaluation",
             "--profile", "evidence",
-            "--source", "arxiv", "--max-queries", "2", "--max-sources", "4",
+            "--max-queries", "2", "--max-sources", "6",
             "--timeout", "60", "--no-model", "--json",
         ]
         if args.artifact_root:

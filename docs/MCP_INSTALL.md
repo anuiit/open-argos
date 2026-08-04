@@ -4,7 +4,7 @@ This guide exposes one installed Open Argos runtime to Codex, Claude Code, or
 both. The hosts start the same `argos-mcp` stdio command; Argos keeps workflow
 policy, provider configuration, and artifacts outside either client plugin.
 
-Status: `0.9.0-rc1` can build a local wheel and source archive. It is not yet
+Status: `0.9.1-rc1` can build a local wheel and source archive. It is not yet
 published to a registry, so installation starts from a Git clone.
 
 ## Trust boundary

@@ -36,7 +36,6 @@ import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, asdict, fields
 from pathlib import Path
 from pathlib import PureWindowsPath
@@ -421,11 +420,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "min_usable_evidence": 2,
             "min_unique_sources": 1,
             "max_off_topic_ratio": 0.5,
+            "min_mean_topical_score": 0.4,
+            "high_relevance_threshold": 0.5,
+            "min_high_relevance_evidence": 1,
         },
-        "sources": ["exa", "arxiv", "semantic", "openalex", "tavily", "crossref", "brave"],
+        "sources": ["exa", "tavily", "brave"],
         "profiles": {
             "normal": {
-                "sources": ["exa", "tavily", "brave", "openalex", "arxiv"],
+                "sources": ["exa", "tavily", "brave"],
                 "max_sources": 12,
                 "max_queries": 6,
                 "timeout_sec": 420,
@@ -439,7 +441,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "high": False
             },
             "landscape": {
-                "sources": ["exa", "tavily", "brave", "openalex"],
+                "sources": ["exa", "tavily", "brave"],
                 "max_sources": 18,
                 "max_queries": 8,
                 "timeout_sec": 600,
@@ -460,18 +462,28 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "high": False
             },
             "evidence": {
-                "sources": ["arxiv", "semantic", "openalex", "crossref", "exa", "tavily", "brave"],
+                "sources": ["exa", "tavily", "brave"],
                 "max_sources": 24,
                 "max_queries": 8,
                 "timeout_sec": 720,
-                "high": False
+                "high": False,
+                "coverage": {
+                    "min_mean_topical_score": 0.5,
+                    "high_relevance_threshold": 0.5,
+                    "min_high_relevance_evidence": 2
+                }
             },
             "deep": {
-                "sources": ["exa", "arxiv", "semantic", "openalex", "tavily", "crossref", "brave"],
+                "sources": ["exa", "tavily", "brave"],
                 "max_sources": 48,
                 "max_queries": 12,
                 "timeout_sec": 1200,
-                "high": True
+                "high": True,
+                "coverage": {
+                    "min_mean_topical_score": 0.5,
+                    "high_relevance_threshold": 0.5,
+                    "min_high_relevance_evidence": 2
+                }
             }
         },
     },
@@ -795,6 +807,33 @@ def save_user_config_with_backup(path: Path, user_cfg: dict[str, Any]) -> Path |
     return backup
 
 
+def validate_research_coverage_config(
+    coverage: dict[str, Any],
+    location: str,
+) -> None:
+    for key in (
+        "min_usable_evidence",
+        "min_unique_sources",
+        "min_high_relevance_evidence",
+    ):
+        try:
+            if int(coverage.get(key, 0)) < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise SystemExit(f"{location}.{key} must be a non-negative integer")
+    for key in (
+        "max_off_topic_ratio",
+        "min_mean_topical_score",
+        "high_relevance_threshold",
+    ):
+        try:
+            value = float(coverage.get(key, 0.0))
+        except (TypeError, ValueError):
+            raise SystemExit(f"{location}.{key} must be between 0 and 1") from None
+        if value < 0 or value > 1:
+            raise SystemExit(f"{location}.{key} must be between 0 and 1")
+
+
 def validate_config(cfg: dict[str, Any]) -> None:
     concurrency = cfg.get("concurrency", {})
     if concurrency:
@@ -997,7 +1036,7 @@ def validate_config(cfg: dict[str, Any]) -> None:
             if not isinstance(sources, list):
                 raise SystemExit("sota.sources must be a list")
             for source in sources:
-                if source not in {"exa", "arxiv", "semantic", "openalex", "tavily", "crossref", "brave"}:
+                if source not in SOTA_DEFAULT_SOURCES:
                     raise SystemExit(f"sota.sources references unknown source: {source}")
         profiles = sota_cfg.get("profiles", {})
         if profiles:
@@ -1023,8 +1062,18 @@ def validate_config(cfg: dict[str, Any]) -> None:
                     if not isinstance(profile_sources, list):
                         raise SystemExit(f"sota.profiles.{profile_name}.sources must be a list")
                     for source in profile_sources:
-                        if source not in {"exa", "arxiv", "semantic", "openalex", "tavily", "crossref", "brave"}:
+                        if source not in SOTA_DEFAULT_SOURCES:
                             raise SystemExit(f"sota.profiles.{profile_name}.sources references unknown source: {source}")
+                profile_coverage = profile.get("coverage")
+                if profile_coverage is not None:
+                    if not isinstance(profile_coverage, dict):
+                        raise SystemExit(
+                            f"sota.profiles.{profile_name}.coverage must be an object"
+                        )
+                    validate_research_coverage_config(
+                        profile_coverage,
+                        f"sota.profiles.{profile_name}.coverage",
+                    )
         synthesizers = sota_cfg.get("synthesizers", [])
         if not isinstance(synthesizers, list) or not synthesizers:
             raise SystemExit("sota.synthesizers must define at least one argos")
@@ -1034,22 +1083,7 @@ def validate_config(cfg: dict[str, Any]) -> None:
         coverage = sota_cfg.get("coverage", {})
         if not isinstance(coverage, dict):
             raise SystemExit("sota.coverage must be an object")
-        for key in ("min_usable_evidence", "min_unique_sources"):
-            try:
-                if int(coverage.get(key, 1)) < 0:
-                    raise ValueError
-            except (TypeError, ValueError):
-                raise SystemExit(f"sota.coverage.{key} must be a non-negative integer")
-        try:
-            ratio = float(coverage.get("max_off_topic_ratio", 0.5))
-        except (TypeError, ValueError):
-            raise SystemExit(
-                "sota.coverage.max_off_topic_ratio must be between 0 and 1"
-            ) from None
-        if ratio < 0 or ratio > 1:
-            raise SystemExit(
-                "sota.coverage.max_off_topic_ratio must be between 0 and 1"
-            )
+        validate_research_coverage_config(coverage, "sota.coverage")
 
 
 MINIMAX_LOCKED_MODEL = "minimax/MiniMax-M3"
@@ -5341,9 +5375,8 @@ SOTA_SOURCE_KEYS = {
     "exa": "EXA_API_KEY",
     "tavily": "TAVILY_API_KEY",
     "brave": "BRAVE_SEARCH_API_KEY",
-    "semantic": "S2_API_KEY",
 }
-SOTA_DEFAULT_SOURCES = ["exa", "arxiv", "semantic", "openalex", "tavily", "crossref", "brave"]
+SOTA_DEFAULT_SOURCES = ["exa", "tavily", "brave"]
 RESEARCH_PROFILE_NAMES = (
     "normal", "docs", "landscape", "implementation",
     "current", "evidence", "deep",
@@ -5670,31 +5703,10 @@ BENCHMARK_CASES: list[dict[str, Any]] = [
         "objective": "Versioned benchmark problems distinguish strong argos behavior from weak answers across recent agent-benchmark capabilities.",
     },
 ]
-SOTA_PUBLIC_SOURCES = {"arxiv", "openalex", "crossref"}
 SOTA_LANE_SOURCE_PRIORITY = {
-    "academic": ["arxiv", "semantic", "openalex", "crossref", "exa", "tavily", "brave"],
-    "applied": ["exa", "tavily", "brave", "semantic", "openalex", "arxiv", "crossref"],
+    "academic": ["exa", "tavily", "brave"],
+    "applied": ["exa", "tavily", "brave"],
 }
-SOTA_ARXIV_LAST_REQUEST_AT = 0.0
-
-
-def sota_arxiv_min_interval_sec() -> float:
-    try:
-        return max(0.0, float(os.environ.get("ARGOS_SOTA_ARXIV_MIN_INTERVAL_SEC", "3.1")))
-    except (TypeError, ValueError):
-        return 3.1
-
-
-def throttle_arxiv_request() -> None:
-    global SOTA_ARXIV_LAST_REQUEST_AT
-    interval = sota_arxiv_min_interval_sec()
-    if interval <= 0:
-        return
-    now = time.monotonic()
-    wait = interval - (now - SOTA_ARXIV_LAST_REQUEST_AT)
-    if wait > 0:
-        time.sleep(wait)
-    SOTA_ARXIV_LAST_REQUEST_AT = time.monotonic()
 
 
 @dataclass
@@ -5727,9 +5739,7 @@ class SotaSourceResult:
 
 
 def argos_sota_user_agent() -> str:
-    contact = sota_mailto_param() if "sota_mailto_param" in globals() else None
-    suffix = f" ({contact})" if contact else ""
-    return f"argos-research/{VERSION}{suffix}"
+    return f"argos-research/{VERSION}"
 
 
 def http_json(url: str, *, method: str = "GET", headers: dict[str, str] | None = None, payload: dict[str, Any] | None = None, timeout: int = 20) -> dict[str, Any]:
@@ -5743,28 +5753,6 @@ def http_json(url: str, *, method: str = "GET", headers: dict[str, str] | None =
     req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode(errors="replace"))
-
-
-def http_text(url: str, *, headers: dict[str, str] | None = None, timeout: int = 20) -> str:
-    req_headers = {"Accept": "application/xml,text/xml,text/plain,*/*", "User-Agent": argos_sota_user_agent()}
-    if headers:
-        req_headers.update(headers)
-    req = urllib.request.Request(url, headers=req_headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode(errors="replace")
-
-
-def http_text_retry(url: str, *, headers: dict[str, str] | None = None, timeout: int = 20, attempts: int = 2, backoff_sec: float = 1.0) -> str:
-    last_error: Exception | None = None
-    for attempt in range(max(1, attempts)):
-        try:
-            return http_text(url, headers=headers, timeout=timeout)
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_error = e
-            if attempt + 1 < attempts:
-                time.sleep(backoff_sec * (attempt + 1))
-    assert last_error is not None
-    raise last_error
 
 
 def clean_excerpt(text: str | None, max_chars: int = 900) -> str:
@@ -5822,7 +5810,7 @@ def rewrite_research_argv(argv: list[str]) -> list[str]:
 
 def generic_topic_terms(text: str, *, limit: int = 10) -> list[str]:
     stop = {
-        "latest", "advances", "survey", "state", "benchmark", "benchmarks", "recent", "arxiv", "papers",
+        "latest", "advances", "survey", "state", "benchmark", "benchmarks", "recent", "papers",
         "methods", "comparison", "industry", "implementation", "limitations", "open", "problems", "newest",
         "breakthrough", "leaderboard", "results", "replication", "evaluation", "production", "systems", "case",
         "study", "competing", "approaches", "evidence", "future", "directions", "with", "from", "that", "this",
@@ -5941,8 +5929,6 @@ def _classify_evidence_quality_for_query(
     relevant, topical_score = is_relevant_to_query(compact_question, item.title, item.excerpt)
     source_score = float(item.relevance or 0.0)
     domain = evidence_domain(item.url)
-    metadata = item.metadata or {}
-    source = (item.source or "").lower()
     source_type = (item.source_type or "").lower()
 
     if not relevant or topical_score < 0.2:
@@ -5953,14 +5939,12 @@ def _classify_evidence_quality_for_query(
         "pinecone.io", "weaviate.io", "qdrant.tech", "langchain.com", "llamaindex.ai",
         "openai.com", "anthropic.com", "googleblog.com", "microsoft.com", "aws.amazon.com",
     }
-    if source in {"arxiv", "semantic", "openalex"} or source_type == "paper":
+    if source_type == "paper":
         if item.published_at:
             reasons.append("dated paper/academic metadata")
         if topical_score >= 0.55:
             reasons.append(f"good topical match ({topical_score:.2f})")
-        if source == "semantic" and (metadata.get("citationCount") or 0):
-            reasons.append("citation metadata")
-        return ("strong" if topical_score >= 0.55 else "medium"), reasons or [f"academic source ({source})"], topical_score, source_score
+        return ("strong" if topical_score >= 0.55 else "medium"), reasons or ["academic source"], topical_score, source_score
 
     if any(domain_matches(domain, marker) for marker in vendor_markers):
         if profile in {"docs", "current"}:
@@ -5975,7 +5959,7 @@ def _classify_evidence_quality_for_query(
             )
         return "vendor", [f"vendor/product domain ({domain})", f"topical match ({topical_score:.2f})"], topical_score, source_score
 
-    if source == "crossref" or source_type == "metadata":
+    if source_type == "metadata":
         return "medium", reasons or ["DOI/metadata record"], topical_score, source_score
 
     if "github.com" in domain:
@@ -6062,6 +6046,15 @@ def assess_research_coverage(
     min_usable = int(thresholds.get("min_usable_evidence", 2))
     min_sources = int(thresholds.get("min_unique_sources", 1))
     max_off_topic_ratio = float(thresholds.get("max_off_topic_ratio", 0.5))
+    min_mean_topical_score = float(
+        thresholds.get("min_mean_topical_score", 0.4)
+    )
+    high_relevance_threshold = float(
+        thresholds.get("high_relevance_threshold", 0.5)
+    )
+    min_high_relevance = int(
+        thresholds.get("min_high_relevance_evidence", 1)
+    )
     quality_counts = evidence_quality_counts(evidence)
     usable_count = sum(
         quality_counts.get(name, 0) for name in ("strong", "medium")
@@ -6069,6 +6062,27 @@ def assess_research_coverage(
     off_topic_count = quality_counts.get("off_topic", 0)
     off_topic_ratio = (
         round(off_topic_count / len(evidence), 4) if evidence else 1.0
+    )
+    topical_scores = [
+        max(0.0, min(1.0, float((item.metadata or {}).get("topical_score") or 0.0)))
+        for item in evidence
+    ]
+    usable_topical_scores = [
+        score
+        for item, score in zip(evidence, topical_scores)
+        if str((item.metadata or {}).get("quality") or "").lower()
+        in {"strong", "medium"}
+    ]
+    mean_topical_score = (
+        round(sum(usable_topical_scores) / len(usable_topical_scores), 4)
+        if usable_topical_scores
+        else 0.0
+    )
+    high_relevance_count = sum(
+        score >= high_relevance_threshold
+        and str((item.metadata or {}).get("quality") or "").lower()
+        in {"strong", "medium"}
+        for item, score in zip(evidence, topical_scores)
     )
     unique_sources = sorted(
         {
@@ -6091,6 +6105,16 @@ def assess_research_coverage(
             f"off_topic_ratio={off_topic_ratio:.4f} exceeds maximum="
             f"{max_off_topic_ratio:.4f}"
         )
+    if mean_topical_score < min_mean_topical_score:
+        reasons.append(
+            f"mean_topical_score={mean_topical_score:.4f} below minimum="
+            f"{min_mean_topical_score:.4f}"
+        )
+    if high_relevance_count < min_high_relevance:
+        reasons.append(
+            f"high_relevance_evidence={high_relevance_count} below minimum="
+            f"{min_high_relevance} at threshold={high_relevance_threshold:.4f}"
+        )
     status = "sufficient" if not reasons else "insufficient"
     payload = {
         "schema_version": 1,
@@ -6104,11 +6128,16 @@ def assess_research_coverage(
         "unique_sources": unique_sources,
         "off_topic_count": off_topic_count,
         "off_topic_ratio": off_topic_ratio,
+        "mean_topical_score": mean_topical_score,
+        "high_relevance_evidence_count": high_relevance_count,
         "quality_counts": quality_counts,
         "thresholds": {
             "min_usable_evidence": min_usable,
             "min_unique_sources": min_sources,
             "max_off_topic_ratio": max_off_topic_ratio,
+            "min_mean_topical_score": min_mean_topical_score,
+            "high_relevance_threshold": high_relevance_threshold,
+            "min_high_relevance_evidence": min_high_relevance,
         },
         "reasons": reasons,
     }
@@ -6117,7 +6146,9 @@ def assess_research_coverage(
 
 def source_enabled(source: str) -> tuple[bool, str | None]:
     env_key = SOTA_SOURCE_KEYS.get(source)
-    if env_key and not os.environ.get(env_key) and source not in SOTA_PUBLIC_SOURCES:
+    if env_key is None:
+        return False, f"unsupported research source: {source}"
+    if not os.environ.get(env_key):
         return False, f"missing {env_key}"
     return True, None
 
@@ -6238,20 +6269,20 @@ def sota_query_plan(
         ),
         "evidence": (
             [
-                ("{q} latest advances survey", "academic"),
-                ("{q} state of the art benchmark", "academic"),
-                ("{q} recent arxiv papers", "academic"),
-                ("{q} methods comparison", "academic"),
-                ("{q} replication evaluation", "academic"),
-                ("{q} limitations open problems", "academic"),
+                ("{q} systematic review meta-analysis", "academic"),
+                ("{q} foundational seminal study", "academic"),
+                ("{q} controlled study causal evidence", "academic"),
+                ("{q} methods comparison effect size", "academic"),
+                ("{q} replication external validity", "academic"),
+                ("{q} theory mechanism empirical evidence", "academic"),
             ],
             [
-                ("{q} newest results 2026", "academic"),
-                ("{q} leaderboard results", "academic"),
+                ("{q} review of evidence", "academic"),
+                ("{q} foundational landmark original paper", "academic"),
                 ("{q} competing approaches evidence", "academic"),
-                ("{q} systematic review", "academic"),
-                ("{q} production validation", "applied"),
-                ("{q} future directions survey", "academic"),
+                ("{q} boundary conditions limitations", "academic"),
+                ("{q} longitudinal field study", "academic"),
+                ("{q} standards consensus report", "academic"),
             ],
         ),
     }
@@ -6260,8 +6291,8 @@ def sota_query_plan(
             ("{q} official documentation", "applied"),
             ("{q} alternatives comparison", "applied"),
             ("{q} production implementation", "applied"),
-            ("{q} latest release known issues", "applied"),
-            ("{q} benchmark evidence", "academic"),
+            ("{q} systematic review meta-analysis", "academic"),
+            ("{q} foundational seminal study", "academic"),
             ("{q} limitations open problems", "academic"),
         ],
         [
@@ -6269,7 +6300,7 @@ def sota_query_plan(
             ("{q} maintained examples case study", "applied"),
             ("{q} competing approaches evidence", "academic"),
             ("{q} security performance tradeoffs", "applied"),
-            ("{q} recent results", "academic"),
+            ("{q} replication external validity", "academic"),
             ("{q} unresolved risks", "applied"),
         ],
     )
@@ -6308,7 +6339,13 @@ def evidence_terms(evidence: list[SotaEvidence], limit: int = 6) -> list[str]:
 
 
 def refine_wave2_queries(plan: list[dict[str, Any]], question: str, wave1: list[SotaEvidence]) -> list[dict[str, Any]]:
-    terms = evidence_terms(wave1, limit=4)
+    directional_evidence = [
+        item
+        for item in wave1
+        if (item.metadata or {}).get("quality") in {"strong", "medium"}
+        and float((item.metadata or {}).get("topical_score") or 0.0) >= 0.5
+    ]
+    terms = evidence_terms(directional_evidence, limit=4)
     focus = " ".join(terms[:3]).strip()
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -6352,14 +6389,35 @@ def _next_evidence_id(rows: list[SotaEvidence]) -> int:
 
 
 def dedupe_evidence(rows: list[SotaEvidence], max_sources: int) -> list[SotaEvidence]:
-    seen: set[str] = set()
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
     out: list[SotaEvidence] = []
     next_id = _next_evidence_id(rows)
     for row in rows:
-        key = (row.url or row.title).strip().lower()
-        if not key or key in seen:
+        try:
+            parsed = urllib.parse.urlparse((row.url or "").strip())
+            url_key = (
+                parsed.netloc.lower().removeprefix("www.")
+                + urllib.parse.unquote(parsed.path or "").rstrip("/")
+            )
+        except (TypeError, ValueError):
+            url_key = (row.url or "").strip().casefold()
+        title_key = re.sub(
+            r"[^a-z0-9]+",
+            " ",
+            (row.title or "").casefold(),
+        ).strip()
+        stable_title_key = title_key if len(title_key) >= 24 else ""
+        if not url_key and not title_key:
             continue
-        seen.add(key)
+        if url_key and url_key in seen_urls:
+            continue
+        if stable_title_key and stable_title_key in seen_titles:
+            continue
+        if url_key:
+            seen_urls.add(url_key)
+        if stable_title_key:
+            seen_titles.add(stable_title_key)
         if not row.id:
             row.id = f"E{next_id}"
             next_id += 1
@@ -6369,159 +6427,30 @@ def dedupe_evidence(rows: list[SotaEvidence], max_sources: int) -> list[SotaEvid
     return out
 
 
-def arxiv_query_variants(query: str) -> list[tuple[str, str]]:
-    terms = generic_topic_terms(query, limit=6)
-    variants: list[tuple[str, str]] = []
-    if len(terms) >= 2:
-        phrase = " ".join(terms[: min(4, len(terms))])
-        variants.append((f'ti:"{phrase}" OR abs:"{phrase}"', "title/abstract phrase"))
-    if terms:
-        and_terms = " AND ".join(f"abs:{term}" for term in terms[: min(4, len(terms))])
-        variants.append((and_terms, "abstract keywords"))
-        cs_terms = " AND ".join(f"all:{term}" for term in terms[: min(3, len(terms))])
-        variants.append((f"({cs_terms}) AND (cat:cs.CL OR cat:cs.IR OR cat:cs.CV OR cat:cs.AI)", "cs category keywords"))
-    variants.append((f"all:{query}", "broad fallback"))
-    out: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for search_query, label in variants:
-        if search_query not in seen:
-            out.append((search_query, label))
-            seen.add(search_query)
-    return out
+def rank_research_evidence(
+    rows: list[SotaEvidence],
+    max_sources: int,
+) -> list[SotaEvidence]:
+    ranked = sorted(
+        rows,
+        key=lambda item: (
+            quality_rank_value((item.metadata or {}).get("quality")),
+            -float((item.metadata or {}).get("topical_score") or 0.0),
+            -float(item.relevance or 0.0),
+        ),
+    )
+    return dedupe_evidence(ranked, max_sources)
 
 
-def parse_arxiv_entries(text: str, *, query: str, wave: int, lane: str, since: str | None, why: str) -> list[SotaEvidence]:
-    root = ET.fromstring(text)
-    ns = {"a": "http://www.w3.org/2005/Atom"}
-    rows: list[SotaEvidence] = []
-    for entry in root.findall("a:entry", ns):
-        title = clean_excerpt(entry.findtext("a:title", default="", namespaces=ns), 300)
-        summary = clean_excerpt(entry.findtext("a:summary", default="", namespaces=ns))
-        if not title:
-            continue
-        published = (entry.findtext("a:published", default="", namespaces=ns) or "")[:10] or None
-        if since and published and published < since:
-            continue
-        relevant, relevance = is_relevant_to_query(query, title, summary)
-        if not relevant:
-            continue
-        url = entry.findtext("a:id", default="", namespaces=ns)
-        authors = [clean_excerpt(a.findtext("a:name", default="", namespaces=ns), 100) for a in entry.findall("a:author", ns)]
-        categories = [c.attrib.get("term") for c in entry.findall("a:category", ns) if c.attrib.get("term")]
-        rows.append(SotaEvidence("", "arxiv", url, title, "paper", published, utc_now(), authors, summary, query, wave, lane, why, max(0.62, relevance), 0.78, {"categories": categories}))
-    return rows
-
-
-def fetch_arxiv(query: str, *, limit: int, since: str | None, wave: int, lane: str, timeout: int) -> SotaSourceResult:
-    rows: list[SotaEvidence] = []
-    errors: list[str] = []
-    per_call_limit = max(limit * 3, limit + 2)
-    api_query = compact_search_query(query)
-    variants = arxiv_query_variants(api_query)
-    # Sort by relevance for focused variants, then fall back to submitted date for recency.
-    for idx, (search_query, why) in enumerate(variants):
-        if len(rows) >= limit:
-            break
-        sort_by = "relevance" if idx < 3 else "submittedDate"
-        params = {"search_query": search_query, "start": "0", "max_results": str(per_call_limit), "sortBy": sort_by, "sortOrder": "descending"}
-        url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode(params)
-        try:
-            throttle_arxiv_request()
-            text = http_text_retry(url, timeout=max(10, timeout), attempts=2, backoff_sec=1.5)
-            rows.extend(parse_arxiv_entries(text, query=api_query, wave=wave, lane=lane, since=since, why=f"arXiv {why}"))
-            rows = dedupe_evidence(rows, limit)
-            enough_focused_rows = max(1, min(limit, max(2, limit // 2)))
-            if len(rows) >= enough_focused_rows:
-                # A focused ti/abs/cat query returned enough on-topic evidence; avoid extra arXiv calls.
-                break
-        except (urllib.error.URLError, TimeoutError, ET.ParseError, OSError, ValueError, TypeError, AttributeError) as e:
-            errors.append(f"{why}: {str(e)[:160]}")
-        # Global arXiv throttling happens before every network request in throttle_arxiv_request().
-    if rows:
-        return SotaSourceResult("arxiv", rows[:limit], "ok", "; ".join(errors[:2]) if errors else None)
-    return SotaSourceResult("arxiv", [], "error", "; ".join(errors)[:500] if errors else "no relevant arXiv results")
-
-
-def sota_mailto_param() -> str | None:
-    value = os.environ.get("ARGOS_SOTA_MAILTO") or os.environ.get("SOTA_CONTACT_EMAIL")
-    return value.strip() if value and "@" in value else None
-
-
-def fetch_openalex(query: str, *, limit: int, since: str | None, wave: int, lane: str, timeout: int) -> SotaSourceResult:
-    api_query = compact_search_query(query)
-    params = {"search": api_query, "per-page": str(limit), "sort": "publication_date:desc"}
-    if mailto := sota_mailto_param():
-        params["mailto"] = mailto
-    if since:
-        params["filter"] = f"from_publication_date:{since}"
-    url = "https://api.openalex.org/works?" + urllib.parse.urlencode(params)
-    data = http_json(url, timeout=timeout)
-    rows: list[SotaEvidence] = []
-    for item in data.get("results", []):
-        title = clean_excerpt(item.get("display_name"), 300)
-        if not title:
-            continue
-        published = item.get("publication_date")
-        primary = item.get("primary_location") or {}
-        landing = primary.get("landing_page_url") or item.get("doi") or item.get("id")
-        abstract_inv = item.get("abstract_inverted_index") or {}
-        words = []
-        for word, positions in abstract_inv.items():
-            for pos in positions:
-                words.append((pos, word))
-        abstract = " ".join(word for _, word in sorted(words)) if words else ""
-        authors = [a.get("author", {}).get("display_name") for a in item.get("authorships", []) if a.get("author", {}).get("display_name")]
-        rows.append(SotaEvidence("", "openalex", landing, title, "paper", published, utc_now(), authors, clean_excerpt(abstract), api_query, wave, lane, "OpenAlex work search match", 0.7, 0.72, {"cited_by_count": item.get("cited_by_count")}))
-    return SotaSourceResult("openalex", rows)
-
-
-def fetch_semantic(query: str, *, limit: int, since: str | None, wave: int, lane: str, timeout: int) -> SotaSourceResult:
-    api_query = compact_search_query(query)
-    params = {"query": api_query, "limit": str(min(limit, 20)), "fields": "title,url,year,abstract,authors,citationCount,publicationDate,externalIds,venue"}
-    url = "https://api.semanticscholar.org/graph/v1/paper/search?" + urllib.parse.urlencode(params)
-    headers = {}
-    if os.environ.get("S2_API_KEY"):
-        headers["x-api-key"] = os.environ["S2_API_KEY"]
-    data = http_json(url, headers=headers, timeout=timeout)
-    rows: list[SotaEvidence] = []
-    for item in data.get("data", []):
-        title = clean_excerpt(item.get("title"), 300)
-        if not title:
-            continue
-        published = item.get("publicationDate") or (str(item.get("year")) if item.get("year") else None)
-        if since and published and len(published) >= 10 and published[:10] < since:
-            continue
-        url = item.get("url") or ("https://doi.org/" + item.get("externalIds", {}).get("DOI") if item.get("externalIds", {}).get("DOI") else "")
-        authors = [a.get("name") for a in item.get("authors", []) if a.get("name")]
-        rows.append(SotaEvidence("", "semantic", url, title, "paper", published, utc_now(), authors, clean_excerpt(item.get("abstract")), api_query, wave, lane, "Semantic Scholar related/citation graph match", 0.74, 0.72, {"citationCount": item.get("citationCount"), "venue": item.get("venue")}))
-    return SotaSourceResult("semantic", rows)
-
-
-def fetch_crossref(query: str, *, limit: int, since: str | None, wave: int, lane: str, timeout: int) -> SotaSourceResult:
-    api_query = compact_search_query(query)
-    params = {"query": api_query, "rows": str(min(limit, 20)), "sort": "published", "order": "desc"}
-    if mailto := sota_mailto_param():
-        params["mailto"] = mailto
-    if since:
-        params["filter"] = f"from-pub-date:{since}"
-    url = "https://api.crossref.org/works?" + urllib.parse.urlencode(params)
-    data = http_json(url, timeout=timeout)
-    rows: list[SotaEvidence] = []
-    for item in data.get("message", {}).get("items", []):
-        titles = item.get("title") or []
-        title = clean_excerpt(titles[0] if titles else "", 300)
-        if not title:
-            continue
-        date_parts = (item.get("published-print") or item.get("published-online") or item.get("created") or {}).get("date-parts") or []
-        published = None
-        if date_parts and date_parts[0]:
-            parts = date_parts[0] + [1, 1]
-            published = f"{int(parts[0]):04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
-        doi = item.get("DOI")
-        landing = item.get("URL") or (f"https://doi.org/{doi}" if doi else "")
-        authors = [" ".join(x for x in [a.get("given"), a.get("family")] if x) for a in item.get("author", [])]
-        rows.append(SotaEvidence("", "crossref", landing, title, "metadata", published, utc_now(), authors, clean_excerpt(item.get("abstract", "")), api_query, wave, lane, "Crossref DOI/metadata match", 0.55, 0.68, {"doi": doi, "publisher": item.get("publisher")}))
-    return SotaSourceResult("crossref", rows)
+def high_relevance_evidence_count(
+    rows: list[SotaEvidence],
+    threshold: float = 0.5,
+) -> int:
+    return sum(
+        float((item.metadata or {}).get("topical_score") or 0.0) >= threshold
+        and (item.metadata or {}).get("quality") in {"strong", "medium"}
+        for item in rows
+    )
 
 
 def fetch_exa(query: str, *, limit: int, since: str | None, wave: int, lane: str, timeout: int) -> SotaSourceResult:
@@ -6585,10 +6514,6 @@ def fetch_brave(query: str, *, limit: int, since: str | None, wave: int, lane: s
 
 
 SOTA_FETCHERS = {
-    "arxiv": fetch_arxiv,
-    "openalex": fetch_openalex,
-    "semantic": fetch_semantic,
-    "crossref": fetch_crossref,
     "exa": fetch_exa,
     "tavily": fetch_tavily,
     "brave": fetch_brave,
@@ -6601,7 +6526,7 @@ def fetch_sota_source(source: str, query: str, *, limit: int, since: str | None,
         return SotaSourceResult(source, [], "skipped", reason)
     try:
         return SOTA_FETCHERS[source](query, limit=limit, since=since, wave=wave, lane=lane, timeout=timeout)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ET.ParseError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         return SotaSourceResult(source, [], "error", str(e)[:500])
 
 
@@ -7057,12 +6982,15 @@ async def sota_mode(
         wave_rows = [row for row in plan if row.get("wave") == wave]
         for row in wave_rows:
             wave_cap = wave1_cap if wave == 1 else max_sources
-            if time.monotonic() >= deadline or len(evidence) >= wave_cap:
+            if (
+                time.monotonic() >= deadline
+                or high_relevance_evidence_count(evidence) >= wave_cap
+            ):
                 break
             lane = str(row.get("lane") or "academic")
             query = str(row["query"])
             for source in sources_for_lane(sources, lane)[:4]:
-                if time.monotonic() >= deadline or len(evidence) >= wave_cap:
+                if time.monotonic() >= deadline:
                     break
                 result = fetch_sota_source(source, query, limit=per_query_limit, since=args.since, wave=wave, lane=lane, timeout=per_request_timeout)
                 annotated = annotate_evidence_quality(
@@ -7093,15 +7021,14 @@ async def sota_mode(
                     "warnings": event_warnings,
                 })
                 evidence.extend(usable)
-                evidence = dedupe_evidence(evidence, wave_cap)
+                evidence = rank_research_evidence(evidence, wave_cap)
         atomic_write_json(artifact_dir / f"wave{wave}_events.json", [e for e in events if e.get("wave") == wave])
         atomic_write_json(artifact_dir / f"wave{wave}_evidence.json", [asdict(e) for e in evidence if e.research_wave == wave])
         write_sota_wave_summary(artifact_dir / f"wave{wave}_summary.md", wave, evidence, events)
 
-    evidence = annotate_evidence_quality(
-        dedupe_evidence(evidence, max_sources),
-        question,
-        profile_name,
+    evidence = rank_research_evidence(
+        annotate_evidence_quality(evidence, question, profile_name),
+        max_sources,
     )
     atomic_write_json(artifact_dir / "query_plan.json", plan)
     atomic_write_json(artifact_dir / "events.json", events)
@@ -7748,8 +7675,8 @@ def run_benchmark_case(case_id: str, cfg: dict[str, Any], tmp_dir: Path, *, prom
         agy_text, agy_meta = parse_agy(" visual answer \n")
         observations.append(benchmark_check(agy_text == "visual answer" and agy_meta["raw_format"] == "text", "agy text output is normalized"))
     elif case_id == "sota_citation_guard":
-        evidence = [SotaEvidence("E1", "arxiv", "https://arxiv.org/abs/2601.00001", "Benchmark paper", "paper")]
-        ok = verify_sota_report("Supported claim [E1] https://arxiv.org/abs/2601.00001", evidence)
+        evidence = [SotaEvidence("E1", "exa", "https://example.com/paper", "Benchmark paper", "paper")]
+        ok = verify_sota_report("Supported claim [E1] https://example.com/paper", evidence)
         bad = verify_sota_report("Unsupported claim [E2] https://unexpected.example/post", evidence)
         observations.append(benchmark_check(ok["status"] == "ok", "valid cited evidence passes"))
         observations.append(benchmark_check(bad["status"] == "error" and bad["missing_citations"] == ["E2"], "missing evidence IDs fail"))
@@ -8400,7 +8327,7 @@ def main(argv: list[str] | None = None) -> int:
         default=RESEARCH_DEFAULT_PROFILE,
         help="research focus: normal, docs, landscape, implementation, current, evidence, or deep",
     )
-    p_sota.add_argument("--source", action="append", help="source to use; repeatable: exa, arxiv, semantic, openalex, tavily, crossref, brave")
+    p_sota.add_argument("--source", action="append", help="source to use; repeatable: exa, tavily, brave")
     p_sota.add_argument("--since", help="minimum publication date YYYY-MM-DD when supported by the source")
     p_sota.add_argument("--max-sources", type=int)
     p_sota.add_argument("--max-queries", type=int)

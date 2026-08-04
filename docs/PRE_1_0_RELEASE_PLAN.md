@@ -1,8 +1,8 @@
 # Pre-1.0 release status
 
-Snapshot: 2026-08-04
-Candidate: `0.9.0-rc1` (`0.9.0rc1` in Python metadata)
-Branch: `codex/argos-reliability-hardening`
+Snapshot: 2026-08-05
+Candidate: `0.9.1-rc1` (`0.9.1rc1` in Python metadata)
+Branch: `main`
 
 ## Current verdict
 
@@ -18,11 +18,11 @@ Latest evidence:
 - MCP SDK lane: `48 passed, 2 skipped` with `mcp==2.0.0`;
 - Ruff, byte-compilation, PowerShell installer parsing, and `git diff --check`
   pass;
-- wheel and sdist build as `open_argos-0.9.0rc1`;
+- wheel and sdist build as `open_argos-0.9.1rc1`;
 - archive verification rejects tests, benchmarks, plugin sources, internal
   histories, and local agent state from the Python distribution;
 - a fresh venv installs the wheel with `--no-deps`, reports
-  `argos 0.9.0-rc1`, and imports the MCP launcher without the SDK installed;
+  `argos 0.9.1-rc1`, and imports the MCP launcher without the SDK installed;
 - a fresh isolated MCP runtime installs, verifies `mcp==2.0.0`, and reports
   ready while using a runtime-local writable uv cache.
 
@@ -35,7 +35,7 @@ no commit divergence at the audited snapshot:
 | --- | --- | --- |
 | `fa7ad85` | Fail-closed providers, context, sessions | Code/test ready; bounded live provider smoke remains. |
 | `ffe904a` | MCP bridge and runtime | Code/test ready; clean Codex + Claude Code registration remains. |
-| `fd4b755` | Focused plugin surface | Migration routes and changelog now documented; plugin candidate is `0.5.2-rc.1`. |
+| `fd4b755` | Focused plugin surface | Migration routes and changelog now documented; current plugin candidate is `0.5.3-rc.1`. |
 | `9fe3060` | Benchmark v2 harness/corpus | Keep as quality infrastructure; distribution verifier excludes it from wheel/sdist. |
 | `bb40b51` | Long OpenCode event abort | Ready with focused regression coverage. |
 | `46b1a21` | Installable pre-1.0 candidate | Locally verified; remote and clean-host gates remain. |
@@ -107,7 +107,7 @@ Every run retains an `inputs_report` with included/skipped paths and limits.
   unavailable provider is recorded explicitly rather than silently skipped.
 - [ ] `main` branch protection requires CI before merge.
 
-### Non-blocking for GitHub-only `0.9.0-rc1`
+### Non-blocking for GitHub-only `0.9.1-rc1`
 
 - PyPI publication is not enabled. The `open-argos` endpoint returned 404
   during preparation, but availability must be rechecked immediately before a

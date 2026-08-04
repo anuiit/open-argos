@@ -2,7 +2,7 @@
 
 ## Release boundary
 
-The `0.9.0-rc1` candidate covers:
+The `0.9.1-rc1` candidate covers:
 
 - the `open-argos` Python distribution and `argos` CLI;
 - the isolated `argos-mcp` bridge;
@@ -53,8 +53,8 @@ commands.
 
 ## Version domains
 
-- Product/tag version: `0.9.0-rc1` / `v0.9.0-rc1`.
-- Python package version: the PEP 440 equivalent `0.9.0rc1`.
+- Product/tag version: `0.9.1-rc1` / `v0.9.1-rc1`.
+- Python package version: the PEP 440 equivalent `0.9.1rc1`.
 - `argos-tools` plugin version: independent SemVer plus a local Codex
   cachebuster suffix.
 - MCP protocol/package and benchmark schema versions: independent compatibility

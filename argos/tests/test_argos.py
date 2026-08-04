@@ -156,7 +156,7 @@ class ConfigValidationTests(IsolatedRuntimeRootsTestCase):
         argos.validate_config(cfg)
 
     def test_validate_config_rejects_unknown_sota_source(self) -> None:
-        cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {"sota": {"sources": ["arxiv", "nope"]}})
+        cfg = argos.deep_merge(argos.DEFAULT_CONFIG, {"sota": {"sources": ["exa", "nope"]}})
         with self.assertRaises(SystemExit):
             argos.validate_config(cfg)
 
@@ -1979,7 +1979,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             "config": "/nonexistent/argos-test-config.json",
             "question": "agentic coding benchmarks",
             "profile": None,
-            "source": ["arxiv", "openalex"],
+            "source": ["exa", "tavily"],
             "since": None,
             "max_sources": 6,
             "max_queries": 4,
@@ -2005,7 +2005,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
                     source=source,
                     url=f"https://example.com/{source}/{wave}/{abs(hash(query)) % 10000}",
                     title=f"{source} result wave {wave}",
-                    source_type="paper" if source in {"arxiv", "openalex"} else "web",
+                    source_type="web",
                     published_at="2026-01-01",
                     retrieved_at=argos.utc_now(),
                     authors=["A. Researcher"],
@@ -2041,8 +2041,239 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
         self.assertTrue(any("production" in row["query"] for row in implementation))
         self.assertTrue(any(row["lane"] == "academic" for row in evidence))
 
+    def test_research_sources_are_limited_to_approved_api_providers(self) -> None:
+        approved = {"exa", "tavily", "brave"}
+
+        self.assertEqual(set(argos.SOTA_DEFAULT_SOURCES), approved)
+        self.assertEqual(set(argos.SOTA_FETCHERS), approved)
+        self.assertEqual(set(argos.SOTA_SOURCE_KEYS), approved)
+        for profile in argos.DEFAULT_CONFIG["sota"]["profiles"].values():
+            self.assertEqual(set(profile["sources"]), approved)
+
+        cfg = argos.deep_merge(
+            argos.DEFAULT_CONFIG,
+            {"sota": {"sources": ["exa", "arxiv"]}},
+        )
+        with self.assertRaisesRegex(SystemExit, "unknown source: arxiv"):
+            argos.validate_config(cfg)
+
+    def test_evidence_queries_cover_foundational_work_without_recency_bias(self) -> None:
+        for profile in ("evidence", "deep"):
+            plan = argos.sota_query_plan(
+                "retrieval practice cognitive psychology",
+                12,
+                profile,
+            )
+            queries = " ".join(row["query"].lower() for row in plan)
+
+            self.assertIn("systematic review", queries)
+            self.assertIn("foundational", queries)
+            for biased_term in (
+                "latest",
+                "newest",
+                "recent arxiv",
+                "state of the art",
+                "leaderboard",
+            ):
+                self.assertNotIn(biased_term, queries)
+
+    def test_wave2_refinement_ignores_low_relevance_direction_terms(self) -> None:
+        plan = argos.sota_query_plan("retrieval practice", 4, "evidence")
+        weak = argos.SotaEvidence(
+            id="E1",
+            source="exa",
+            url="https://example.com/robotics",
+            title="Federated robot navigation agents",
+            source_type="web",
+            excerpt="Autonomous navigation and cyber security.",
+            metadata={"quality": "weak", "topical_score": 0.3},
+        )
+
+        refined = argos.refine_wave2_queries(plan, "retrieval practice", [weak])
+
+        wave2_queries = " ".join(
+            row["query"].lower() for row in refined if row["wave"] == 2
+        )
+        self.assertNotIn("robot", wave2_queries)
+        self.assertNotIn("navigation", wave2_queries)
+        self.assertTrue(
+            all("direction_terms" not in row for row in refined if row["wave"] == 2)
+        )
+
+    def test_evidence_coverage_rejects_only_low_topical_scores(self) -> None:
+        evidence = [
+            argos.SotaEvidence(
+                id=f"E{index}",
+                source=source,
+                url=f"https://example.com/{index}",
+                title="Tangential result",
+                source_type="web",
+                metadata={"quality": "medium", "topical_score": 0.4},
+            )
+            for index, source in enumerate(("exa", "tavily"), start=1)
+        ]
+
+        coverage = argos.assess_research_coverage(
+            evidence,
+            "evidence",
+            argos.DEFAULT_CONFIG,
+        )
+
+        self.assertEqual(coverage["status"], "insufficient")
+        self.assertLess(coverage["mean_topical_score"], 0.5)
+        self.assertTrue(
+            any("high_relevance_evidence" in reason for reason in coverage["reasons"])
+        )
+
+    def test_evidence_coverage_does_not_promote_vendor_results(self) -> None:
+        evidence = [
+            argos.SotaEvidence(
+                id=f"E{index}",
+                source=source,
+                url=f"https://example.com/{index}",
+                title="Marginal academic result",
+                source_type="web",
+                metadata={"quality": "medium", "topical_score": 0.4},
+            )
+            for index, source in enumerate(("exa", "tavily"), start=1)
+        ]
+        evidence.extend(
+            argos.SotaEvidence(
+                id=f"E{index}",
+                source="brave",
+                url=f"https://vendor.example/{index}",
+                title="Commercial result",
+                source_type="vendor",
+                metadata={"quality": "vendor", "topical_score": 0.9},
+            )
+            for index in (3, 4)
+        )
+
+        coverage = argos.assess_research_coverage(
+            evidence,
+            "evidence",
+            argos.DEFAULT_CONFIG,
+        )
+
+        self.assertEqual(coverage["status"], "insufficient")
+        self.assertEqual(coverage["high_relevance_evidence_count"], 0)
+        self.assertEqual(coverage["mean_topical_score"], 0.4)
+
+    def test_low_quality_first_source_does_not_starve_other_providers(self) -> None:
+        calls = []
+
+        def fake_source(source, query, *, limit, since, wave, lane, timeout):
+            calls.append((wave, source))
+            if source == "exa":
+                rows = [
+                    argos.SotaEvidence(
+                        "",
+                        source,
+                        f"https://example.com/off-topic/{wave}/{index}",
+                        "Federated robot navigation agents",
+                        "web",
+                        excerpt="Autonomous navigation and cyber security.",
+                    )
+                    for index in range(2)
+                ]
+            else:
+                title = (
+                    "Retrieval practice improves durable memory"
+                    if source == "tavily"
+                    else "Testing retrieval practice for durable memory"
+                )
+                rows = [
+                    argos.SotaEvidence(
+                        "",
+                        source,
+                        f"https://example.com/{source}/{wave}",
+                        title,
+                        "web",
+                        excerpt="Controlled retrieval practice memory study.",
+                    )
+                ]
+            return argos.SotaSourceResult(source, rows)
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(
+            argos,
+            "fetch_sota_source",
+            side_effect=fake_source,
+        ):
+            out = io.StringIO()
+            args = self.sota_args(
+                artifact_root=td,
+                question="retrieval practice memory",
+                profile="evidence",
+                source=["exa", "tavily", "brave"],
+                max_sources=4,
+                max_queries=2,
+                no_model=True,
+            )
+            with contextlib.redirect_stdout(out):
+                rc = asyncio.run(argos.sota_mode(args))
+            payload = json.loads(out.getvalue())
+            evidence = json.loads(
+                (Path(payload["artifact_dir"]) / "evidence.json").read_text()
+            )
+
+        self.assertEqual(rc, argos.EXIT_OK)
+        self.assertTrue({"exa", "tavily", "brave"}.issubset({s for _, s in calls}))
+        self.assertEqual(
+            {row["source"] for row in evidence[:2]},
+            {"tavily", "brave"},
+        )
+
+    def test_evidence_deduplication_rejects_same_title_from_different_urls(self) -> None:
+        rows = [
+            argos.SotaEvidence(
+                "",
+                "exa",
+                "https://example.com/paper?ref=exa",
+                "A Meta-Analytic Review of Retrieval Practice",
+                "web",
+            ),
+            argos.SotaEvidence(
+                "",
+                "tavily",
+                "https://publisher.example/article",
+                "A Meta-Analytic Review of Retrieval Practice",
+                "web",
+            ),
+        ]
+
+        deduped = argos.dedupe_evidence(rows, 10)
+
+        self.assertEqual(len(deduped), 1)
+
+    def test_evidence_ranking_keeps_best_duplicate(self) -> None:
+        rows = [
+            argos.SotaEvidence(
+                "",
+                "brave",
+                "https://example.com/summary",
+                "A Meta-Analytic Review of Retrieval Practice",
+                "web",
+                relevance=0.9,
+                metadata={"quality": "weak", "topical_score": 0.8},
+            ),
+            argos.SotaEvidence(
+                "",
+                "exa",
+                "https://publisher.example/article",
+                "A Meta-Analytic Review of Retrieval Practice",
+                "paper",
+                relevance=0.7,
+                metadata={"quality": "strong", "topical_score": 0.6},
+            ),
+        ]
+
+        ranked = argos.rank_research_evidence(rows, 10)
+
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0].source, "exa")
+
     def test_sources_for_lane_falls_back_to_selected_sources(self) -> None:
-        self.assertEqual(argos.sources_for_lane(["arxiv"], "applied"), ["arxiv"])
+        self.assertEqual(argos.sources_for_lane(["brave"], "applied"), ["brave"])
 
     def test_sota_profiles_are_validated_and_select_defaults(self) -> None:
         argos.validate_config(argos.DEFAULT_CONFIG)
@@ -2102,9 +2333,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
         self.assertIn("sahi", compact.lower())
         self.assertIn("yolo", compact.lower())
 
-    def test_arxiv_query_variants_and_relevance_filter(self) -> None:
-        variants = argos.arxiv_query_variants("retrieval augmented generation evaluation")
-        self.assertTrue(any('ti:"retrieval augmented generation"' in query for query, _ in variants))
+    def test_topic_relevance_filter_rejects_unrelated_results(self) -> None:
         relevant, score = argos.is_relevant_to_query(
             "retrieval augmented generation evaluation",
             "Evaluating retrieval augmented generation systems",
@@ -2119,11 +2348,59 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
         )
         self.assertFalse(irrelevant)
 
-    def test_semantic_requires_key_to_avoid_public_rate_limit(self) -> None:
+    def test_research_sources_require_their_api_keys(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
-            enabled, reason = argos.source_enabled("semantic")
+            for source, env_key in argos.SOTA_SOURCE_KEYS.items():
+                with self.subTest(source=source):
+                    enabled, reason = argos.source_enabled(source)
+                    self.assertFalse(enabled)
+                    self.assertIn(env_key, reason)
+
+    def test_removed_research_source_is_unsupported(self) -> None:
+        enabled, reason = argos.source_enabled("arxiv")
         self.assertFalse(enabled)
-        self.assertIn("S2_API_KEY", reason)
+        self.assertEqual(reason, "unsupported research source: arxiv")
+
+    def test_fetch_exa_uses_header_key_and_publication_filter(self) -> None:
+        seen = {}
+
+        def fake_json(url, *, method="GET", headers=None, payload=None, timeout=20):
+            seen.update(
+                url=url,
+                method=method,
+                headers=headers,
+                payload=payload,
+            )
+            return {
+                "results": [
+                    {
+                        "title": "Retrieval practice review",
+                        "url": "https://example.com/review",
+                        "publishedDate": "2020-01-02T00:00:00.000Z",
+                        "summary": "A systematic review of retrieval practice.",
+                    }
+                ]
+            }
+
+        with mock.patch.dict(os.environ, {"EXA_API_KEY": "secret"}), \
+            mock.patch.object(argos, "http_json", side_effect=fake_json):
+            result = argos.fetch_exa(
+                "retrieval practice",
+                limit=2,
+                since="2020-01-01",
+                wave=1,
+                lane="academic",
+                timeout=10,
+            )
+
+        self.assertEqual(seen["method"], "POST")
+        self.assertEqual(seen["headers"], {"x-api-key": "secret"})
+        self.assertNotIn("api_key", seen["payload"])
+        self.assertEqual(
+            seen["payload"]["startPublishedDate"],
+            "2020-01-01T00:00:00.000Z",
+        )
+        self.assertEqual(result.evidence[0].source, "exa")
 
     def test_fetch_tavily_uses_compact_query(self) -> None:
         seen = {}
@@ -2154,32 +2431,6 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             result = argos.fetch_brave("small object detection", limit=5, since="2025-01-01", wave=1, lane="applied", timeout=10)
         self.assertEqual(result.evidence[0].published_at, None)
         self.assertIn("since filter not enforced", result.warnings[0])
-
-    def test_fetch_arxiv_filters_off_topic_atom_results(self) -> None:
-        xml = """<?xml version="1.0" encoding="UTF-8"?>
-        <feed xmlns="http://www.w3.org/2005/Atom">
-          <entry>
-            <id>http://arxiv.org/abs/2601.00001v1</id>
-            <title>Evaluating Retrieval Augmented Generation Benchmarks</title>
-            <summary>RAG evaluation, faithfulness, answer relevance and citation quality.</summary>
-            <published>2026-01-01T00:00:00Z</published>
-            <author><name>A. Author</name></author>
-            <category term="cs.CL"/>
-          </entry>
-          <entry>
-            <id>http://arxiv.org/abs/2601.00002v1</id>
-            <title>Calibrating distance indicators through galaxies</title>
-            <summary>Cosmology and clustering measurements.</summary>
-            <published>2026-01-02T00:00:00Z</published>
-          </entry>
-        </feed>
-        """
-        with mock.patch.object(argos, "http_text_retry", return_value=xml), \
-            mock.patch.dict(os.environ, {"ARGOS_SOTA_ARXIV_MIN_INTERVAL_SEC": "0"}):
-            result = argos.fetch_arxiv("retrieval augmented generation evaluation", limit=4, since="2025-01-01", wave=1, lane="academic", timeout=10)
-        self.assertEqual(result.status, "ok")
-        self.assertEqual(len(result.evidence), 1)
-        self.assertIn("Retrieval Augmented Generation", result.evidence[0].title)
 
     def test_cli_aliases_for_sota_profiles(self) -> None:
         with mock.patch.object(argos, "sota_mode", new_callable=mock.AsyncMock, return_value=argos.EXIT_OK) as mocked:
@@ -2262,14 +2513,14 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
     def test_sota_summary_json_includes_health_and_quality(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "fetch_sota_source", side_effect=self.fake_source_result):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=True, source=["arxiv"], max_sources=2, max_queries=2)
+            args = self.sota_args(artifact_root=td, no_model=True, source=["exa"], max_sources=2, max_queries=2)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
             summary = json.loads((Path(meta["artifact_dir"]) / "summary.json").read_text())
         self.assertEqual(rc, argos.EXIT_OK)
         self.assertEqual(summary["mode"], "sota")
-        self.assertIn("arxiv", summary["source_health"])
+        self.assertIn("exa", summary["source_health"])
         self.assertTrue(summary["source_quality_counts"])
         self.assertTrue(summary["best_sources"])
 
@@ -2281,25 +2532,25 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             ])
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "fetch_sota_source", side_effect=fake_off_topic):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=True, source=["arxiv"], max_sources=4, max_queries=2, strict_topic=True)
+            args = self.sota_args(artifact_root=td, no_model=True, source=["exa"], max_sources=4, max_queries=2, strict_topic=True)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
             evidence = json.loads((Path(meta["artifact_dir"]) / "evidence.json").read_text())
             summary = json.loads((Path(meta["artifact_dir"]) / "summary.json").read_text())
-        self.assertEqual(rc, argos.EXIT_OK)
+        self.assertEqual(rc, argos.EXIT_ERROR)
         self.assertEqual(
             [row["title"] for row in evidence],
-            ["Agentic coding benchmark", "Agentic coding benchmark"],
+            ["Agentic coding benchmark"],
         )
-        self.assertGreater(summary["source_health"]["arxiv"]["filtered"], 0)
+        self.assertGreater(summary["source_health"]["exa"]["filtered"], 0)
         self.assertGreater(summary["total_filtered_count"], 0)
 
     def test_classify_evidence_quality_labels_vendor_and_off_topic(self) -> None:
         vendor = argos.SotaEvidence("", "exa", "https://www.pinecone.io/blog/rag-eval", "RAG evaluation benchmarks", "web", excerpt="Retrieval augmented generation evaluation and faithfulness.")
         spoofed = argos.SotaEvidence("", "exa", "https://openai.com.evil.example/post", "RAG evaluation benchmarks", "web", excerpt="Retrieval augmented generation evaluation and faithfulness.")
-        off = argos.SotaEvidence("", "arxiv", "u", "Galaxy distance calibration", "paper", excerpt="Cosmology clustering measurements.")
-        weak_paper = argos.SotaEvidence("", "arxiv", "https://arxiv.org/abs/1", "Agentic systems", "paper", published_at="2026-01-01", excerpt="Agentic workflows.", relevance=0.9)
+        off = argos.SotaEvidence("", "exa", "u", "Galaxy distance calibration", "paper", excerpt="Cosmology clustering measurements.")
+        weak_paper = argos.SotaEvidence("", "exa", "https://example.com/paper", "Agentic systems", "paper", published_at="2026-01-01", excerpt="Agentic workflows.", relevance=0.9)
         self.assertEqual(argos.classify_evidence_quality(vendor, "retrieval augmented generation evaluation")[0], "vendor")
         self.assertNotEqual(argos.classify_evidence_quality(spoofed, "retrieval augmented generation evaluation")[0], "vendor")
         self.assertEqual(argos.classify_evidence_quality(off, "retrieval augmented generation evaluation")[0], "off_topic")
@@ -2333,7 +2584,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
 
     def test_evidence_to_prompt_truncates_to_valid_json(self) -> None:
         evidence = [
-            argos.SotaEvidence(id=f"E{i}", source="arxiv", url=f"u{i}", title="title", source_type="paper", excerpt="x" * 500)
+            argos.SotaEvidence(id=f"E{i}", source="exa", url=f"u{i}", title="title", source_type="paper", excerpt="x" * 500)
             for i in range(10)
         ]
         payload = argos.evidence_to_prompt(evidence, max_chars=1200)
@@ -2342,7 +2593,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
         self.assertLess(len(rows), len(evidence))
 
     def test_evidence_to_prompt_keeps_at_least_one_huge_item_when_possible(self) -> None:
-        evidence = [argos.SotaEvidence(id="E1", source="arxiv", url="u", title="title", source_type="paper", excerpt="x" * 100000)]
+        evidence = [argos.SotaEvidence(id="E1", source="exa", url="u", title="title", source_type="paper", excerpt="x" * 100000)]
         payload = argos.evidence_to_prompt(evidence, max_chars=2000)
         rows = json.loads(payload)
         self.assertEqual(rows[0]["id"], "E1")
@@ -2350,7 +2601,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
 
     def test_evidence_to_prompt_shortens_excerpts_before_dropping_items(self) -> None:
         evidence = [
-            argos.SotaEvidence(id=f"E{i}", source="arxiv", url=f"u{i}", title="title", source_type="paper", excerpt="x" * 1000)
+            argos.SotaEvidence(id=f"E{i}", source="exa", url=f"u{i}", title="title", source_type="paper", excerpt="x" * 1000)
             for i in range(3)
         ]
         payload = argos.evidence_to_prompt(evidence, max_chars=2500)
@@ -2371,7 +2622,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             mock.patch.object(argos, "fetch_sota_source", side_effect=self.fake_source_result), \
             mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=False, source=["arxiv"], max_sources=2, max_queries=2)
+            args = self.sota_args(artifact_root=td, no_model=False, source=["exa"], max_sources=2, max_queries=2)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
@@ -2396,10 +2647,10 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
                 self.assertEqual(row["id"], final_by_url[row["url"]])
 
     def test_sota_no_model_without_evidence_is_insufficient(self) -> None:
-        empty = argos.SotaSourceResult("arxiv", [], "ok", None)
+        empty = argos.SotaSourceResult("exa", [], "ok", None)
         with tempfile.TemporaryDirectory() as td, mock.patch.object(argos, "fetch_sota_source", return_value=empty):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=True, source=["arxiv"], max_sources=2, max_queries=2)
+            args = self.sota_args(artifact_root=td, no_model=True, source=["exa"], max_sources=2, max_queries=2)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
@@ -2407,7 +2658,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             self.assertEqual(meta["verification"]["status"], "insufficient")
 
     def test_sota_model_mode_without_evidence_skips_model_spend(self) -> None:
-        empty = argos.SotaSourceResult("arxiv", [], "ok", None)
+        empty = argos.SotaSourceResult("exa", [], "ok", None)
 
         async def fail_if_called(self, name, prompt, files, images=None):
             raise AssertionError("model argos should not run without evidence")
@@ -2416,7 +2667,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             mock.patch.object(argos, "fetch_sota_source", return_value=empty), \
             mock.patch.object(argos.Runner, "run_logical", fail_if_called):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=False, source=["arxiv"], max_sources=2, max_queries=2)
+            args = self.sota_args(artifact_root=td, no_model=False, source=["exa"], max_sources=2, max_queries=2)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
@@ -2444,8 +2695,9 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
     def test_fetch_sota_source_degrades_on_malformed_source_exception(self) -> None:
         for exc in (ValueError("bad date"), AttributeError("bad shape")):
             with self.subTest(exc=type(exc).__name__), \
-                mock.patch.dict(argos.SOTA_FETCHERS, {"arxiv": lambda *a, exc=exc, **k: (_ for _ in ()).throw(exc)}):
-                result = argos.fetch_sota_source("arxiv", "q", limit=1, since=None, wave=1, lane="academic", timeout=1)
+                mock.patch.dict(argos.SOTA_FETCHERS, {"exa": lambda *a, exc=exc, **k: (_ for _ in ()).throw(exc)}), \
+                mock.patch.dict(os.environ, {"EXA_API_KEY": "x"}):
+                result = argos.fetch_sota_source("exa", "q", limit=1, since=None, wave=1, lane="academic", timeout=1)
             self.assertEqual(result.status, "error")
             self.assertIn("bad", result.error)
 
@@ -2469,7 +2721,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             mock.patch.object(argos, "fetch_sota_source", side_effect=self.fake_source_result), \
             mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=False, high=True, source=["arxiv"], max_sources=2, max_queries=2)
+            args = self.sota_args(artifact_root=td, no_model=False, high=True, source=["exa"], max_sources=2, max_queries=2)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
@@ -2502,7 +2754,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
                 no_model=False,
                 profile="deep",
                 high=False,
-                source=["arxiv"],
+                source=["exa"],
                 max_sources=2,
                 max_queries=2,
             )
@@ -2516,7 +2768,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
 
     def test_sota_review_prompt_caps_synthesis_and_evidence_text(self) -> None:
         evidence = [
-            argos.SotaEvidence(id=f"E{i}", source="arxiv", url=f"u{i}", title="t", source_type="paper", excerpt="e" * 2000)
+            argos.SotaEvidence(id=f"E{i}", source="exa", url=f"u{i}", title="t", source_type="paper", excerpt="e" * 2000)
             for i in range(80)
         ]
         syntheses = [argos.ArgosResult(argos="a", status="ok", content="x" * 100000)]
@@ -2554,7 +2806,7 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
             mock.patch.object(argos, "fetch_sota_source", side_effect=self.fake_source_result), \
             mock.patch.object(argos.Runner, "run_logical", fake_run_logical):
             out = io.StringIO()
-            args = self.sota_args(artifact_root=td, no_model=False, source=["arxiv"], max_sources=2, max_queries=2)
+            args = self.sota_args(artifact_root=td, no_model=False, source=["exa"], max_sources=2, max_queries=2)
             with contextlib.redirect_stdout(out):
                 rc = asyncio.run(argos.sota_mode(args))
             meta = json.loads(out.getvalue())
@@ -2565,13 +2817,13 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
         self.assertEqual(meta["reviewer"]["argos"], "glm_max")
 
     def test_verify_sota_report_rejects_missing_evidence_ids(self) -> None:
-        evidence = [argos.SotaEvidence(id="E1", source="arxiv", url="u", title="t", source_type="paper")]
+        evidence = [argos.SotaEvidence(id="E1", source="exa", url="u", title="t", source_type="paper")]
         result = argos.verify_sota_report("Uses [E1] and [E99]", evidence)
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["missing_citations"], ["E99"])
 
     def test_verify_sota_report_rejects_unexpected_urls_and_invalid_ids(self) -> None:
-        evidence = [argos.SotaEvidence(id="bad", source="arxiv", url="https://allowed.example", title="t", source_type="paper")]
+        evidence = [argos.SotaEvidence(id="bad", source="exa", url="https://allowed.example", title="t", source_type="paper")]
         result = argos.verify_sota_report("Uses https://evil.example", evidence)
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["invalid_evidence_ids"], ["bad"])
@@ -2583,13 +2835,13 @@ class SotaExplorerTests(IsolatedRuntimeRootsTestCase):
         self.assertIn("no evidence retrieved", result["warnings"])
 
     def test_verify_sota_report_rejects_when_report_cites_no_ids(self) -> None:
-        evidence = [argos.SotaEvidence(id="E1", source="arxiv", url="u", title="t", source_type="paper")]
+        evidence = [argos.SotaEvidence(id="E1", source="exa", url="u", title="t", source_type="paper")]
         result = argos.verify_sota_report("Evidence exists but no bracketed IDs.", evidence)
         self.assertEqual(result["status"], "error")
         self.assertIn("report cites no evidence IDs", result["warnings"])
 
     def test_verify_sota_report_normalizes_equivalent_urls(self) -> None:
-        evidence = [argos.SotaEvidence(id="E1", source="arxiv", url="https://www.example.com/path/", title="t", source_type="paper")]
+        evidence = [argos.SotaEvidence(id="E1", source="exa", url="https://www.example.com/path/", title="t", source_type="paper")]
         result = argos.verify_sota_report("Uses [E1] http://example.com/path#section", evidence)
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["unexpected_urls"], [])

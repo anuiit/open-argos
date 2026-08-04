@@ -2,7 +2,7 @@
 """Adversarial smoke tests for Argos-Tools/argos.
 
 Runs two cheap break-oriented checks per feature surface. Default mode avoids
-model spend and network; use --research-live for a bounded public-source fetch.
+model spend and network; use --research-live for a bounded API-source fetch.
 """
 from __future__ import annotations
 
@@ -558,7 +558,7 @@ class Suite:
         proc = run_cli([
             "argos", "research", "retrieval augmented generation evaluation",
             "--profile", "evidence",
-            "--source", "arxiv", "--max-queries", "1", "--max-sources", "1",
+            "--max-queries", "1", "--max-sources", "3",
             "--timeout", "45", "--no-model", "--artifact-root", tmp.name, "--json",
         ], timeout=90)
         payload = parse_json(proc, "argos research live")
@@ -591,7 +591,7 @@ def main() -> int:
         "--sota-live",
         dest="sota_live",
         action="store_true",
-        help="include bounded public-source research retrieval smoke",
+        help="include bounded configured-API research retrieval smoke",
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()

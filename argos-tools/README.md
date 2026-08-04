@@ -26,7 +26,7 @@ skill invocation remains `$argos-council`.
 - Codex CLI or Codex app with plugin support.
 - `argos` installed and available on `PATH` in the same environment where Codex runs.
 - Provider CLIs used by argos, including `claude`, `opencode`, the official `kimi` CLI, and optional `agy`/Antigravity vision tooling, must be installed, authenticated, and available in that same execution environment. Kimi is pinned to provider `kimi` and model `kimi-code/k3`.
-- Argos `0.9.0-rc1` or newer is required for the neutral Council mode. Version `0.8.0` introduced safe `--dir` context, conversation lifecycle commands, bounded debates, native Windows compatibility helpers, `--prompt-file`, and the source-backed research pipeline.
+- Argos `0.9.1-rc1` or newer is required for the current three-source research contract. The neutral Council mode was introduced in `0.9.0-rc1`; version `0.8.0` introduced safe `--dir` context, conversation lifecycle commands, bounded debates, native Windows compatibility helpers, `--prompt-file`, and the source-backed research pipeline.
 - Argos injects a baseline no-tools/no-nested-argos prompt contract. Review-like modes also receive normalized review sections (`Blockers`, `Important issues`, `Preferences`, `Minimal fix plan`); `council` intentionally uses a neutral conversational contract instead.
 Windows note: argos `>= 0.6.0` includes native Windows process-group and file-lock compatibility. `argos doctor` reports whether a successful live run has validated the current host. Process snapshots remain limited without `/proc`; WSL is still useful when provider CLIs or credentials live in Linux.
 
@@ -153,7 +153,13 @@ Default config:
 }
 ```
 
-Supported sources: `exa`, `arxiv`, `semantic`, `openalex`, `tavily`, `crossref`, and `brave`. `arxiv`, `openalex`, and `crossref` can run without local API keys; `semantic` is skipped unless `S2_API_KEY` is configured to avoid public rate-limit failures; `exa`, `tavily`, and `brave` require their respective API key environment variables. Crossref is mostly a DOI/metadata normalizer, not the primary discovery engine. arXiv uses the official Atom API with targeted `ti`/`abs`/`cat` query variants, bounded retry, rate-conscious spacing, and lexical relevance filtering. `--timeout` is a best-effort evidence-fetching budget checked between source requests; model calls still use normal argos/provider timeouts.
+Supported sources are intentionally limited to `exa`, `tavily`, and `brave`.
+Each requires its matching `EXA_API_KEY`, `TAVILY_API_KEY`, or
+`BRAVE_SEARCH_API_KEY` environment variable. The Codex host may independently
+use its native web-search tool when available, but Argos does not launch Codex
+or treat that host capability as a fourth backend. `--timeout` is a best-effort
+evidence-fetching budget checked between source requests; model calls still use
+normal Argos/provider timeouts.
 
 ## MCP / Claude Code + Codex interop
 

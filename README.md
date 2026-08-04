@@ -5,7 +5,7 @@ Codex or Claude Code remains in control; Argos asks independent provider CLIs
 for reviews, critiques, plans, research, or persistent council input and keeps
 the evidence in local artifacts.
 
-Current candidate: **0.9.0-rc1**. The project is usable, but the public release
+Current candidate: **0.9.1-rc1**. The project is usable, but the public release
 is still pre-1.0 and its compatibility contract is intentionally narrower than
 the planned 1.0 contract.
 

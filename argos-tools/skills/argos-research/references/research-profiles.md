@@ -23,13 +23,15 @@ open issues, deprecations, roadmaps, and time-sensitive behavior.
 
 ## Evidence
 
-Use `--profile evidence` for papers, standards, benchmarks, replication,
-methodological comparisons, and scientific uncertainty.
+Use `--profile evidence` for foundational studies, systematic reviews,
+meta-analyses, standards, controlled comparisons, replication, and scientific
+uncertainty. It does not add recency terms unless the question itself asks for
+recent work; use `current` when recency is the decision criterion.
 
 ## Deep
 
 Use `--profile deep` to combine documentation, landscape, implementation,
-current, and academic evidence for a high-impact decision. Make conflicting
+foundational and current evidence for a high-impact decision. Make conflicting
 source incentives explicit.
 
 ## Decision record

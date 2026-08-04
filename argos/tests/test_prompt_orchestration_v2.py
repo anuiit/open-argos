@@ -269,7 +269,7 @@ class TrustBoundaryTests(unittest.TestCase):
         evidence = [
             argos.SotaEvidence(
                 id="E1",
-                source="arxiv",
+                source="exa",
                 url="https://example.test/e1",
                 title="Evidence",
                 source_type="paper",
@@ -369,7 +369,7 @@ class ResearchGuardTests(unittest.TestCase):
     def test_insufficient_coverage_skips_all_model_calls_and_writes_artifact(self) -> None:
         evidence = argos.SotaEvidence(
             id="",
-            source="arxiv",
+            source="exa",
             url="https://example.test/only-one",
             title="agentic coding benchmarks",
             source_type="paper",
@@ -383,7 +383,7 @@ class ResearchGuardTests(unittest.TestCase):
             confidence=0.8,
         )
         source_result = argos.SotaSourceResult(
-            source="arxiv", evidence=[evidence]
+            source="exa", evidence=[evidence]
         )
 
         async def fail_if_called(self, name, prompt, files, images=None):
@@ -397,7 +397,7 @@ class ResearchGuardTests(unittest.TestCase):
                 cmd="research",
                 question="agentic coding benchmarks",
                 profile="normal",
-                source=["arxiv"],
+                source=["exa"],
                 since=None,
                 max_sources=2,
                 max_queries=2,

@@ -4,6 +4,33 @@ All notable user-facing changes are documented here. Versions follow Semantic
 Versioning; Python package metadata uses the equivalent PEP 440 spelling (for
 example `0.9.0rc1`).
 
+## [0.9.1-rc1] - 2026-08-05
+
+### Breaking changes and migrations
+
+- Research retrieval now accepts only `exa`, `tavily`, and `brave`; configure
+  `EXA_API_KEY`, `TAVILY_API_KEY`, and `BRAVE_SEARCH_API_KEY` for full coverage.
+  Configurations that still name the removed research sources fail validation
+  with an explicit unsupported-source error.
+- The bundled plugin candidate is `0.5.3-rc.1` and documents Codex native web
+  search as a separate host capability, not an Argos backend.
+
+### Fixed
+
+- Reject `sufficient` coverage when mean topical relevance is too low or too
+  few results meet the high-relevance threshold.
+- Prevent weak results from the first source from filling the evidence quota
+  before the other configured sources are queried; rank evidence by quality
+  and topical relevance before truncation.
+- Stop weak or off-topic wave-one results from contaminating follow-up queries.
+- Replace recency- and computer-science-biased `evidence`/`deep` query templates
+  with systematic-review, foundational-study, replication, and validity terms.
+
+### Removed
+
+- Remove the arXiv, Semantic Scholar, OpenAlex, and Crossref research fetchers,
+  configuration entries, CLI help, documentation, and live-smoke routes.
+
 ## [0.9.0-rc1] - 2026-08-03
 
 ### Breaking changes and migrations

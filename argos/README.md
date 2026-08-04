@@ -2,7 +2,7 @@
 
 Global external-argos runner for Codex (command: `argos`). Standard-library Python. It calls allowlisted external CLIs only (`opencode`, `claude`, `kimi`, and `agy`/Antigravity for image analysis) and never launches `codex`/`codex exec`.
 
-Install the `0.9.0-rc1` candidate from the repository with `pipx install .` or
+Install the `0.9.1-rc1` candidate from the repository with `pipx install .` or
 `uv tool install .`. The canonical cross-platform and MCP setup lives in the
 root [README](../README.md) and [MCP guide](../docs/MCP_INSTALL.md).
 
