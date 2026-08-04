@@ -94,6 +94,17 @@ def test_ci_publishes_the_exact_candidate_distributions() -> None:
     assert verify_index < install_index < upload_index
 
 
+def test_ci_and_release_pin_the_validated_quality_toolchain() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    for pin in ("pytest==9.1.1", "ruff==0.9.2", "build==1.2.2.post1"):
+        assert pin in ci
+        assert pin in release
+
+
 def test_sdist_manifest_excludes_internal_quality_payloads() -> None:
     manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
 
