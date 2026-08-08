@@ -2126,12 +2126,16 @@ def file_unlock(handle: Any) -> None:
 
 def build_opencode_command(candidate: dict[str, Any], model: str, provider_session_id: str | None = None) -> tuple[list[str], str]:
     variant = candidate.get("variant") or candidate.get("effort")
+    agent = candidate.get("agent")
     if provider_session_id:
         cmd = ["opencode", "run", "--pure", "--format", "json", "--no-thinking", "--session", provider_session_id]
         shape = f"opencode run --pure --format json --no-thinking --session {provider_session_id} <prompt>"
     else:
         cmd = ["opencode", "run", "--pure", "--format", "json", "--no-thinking", "-m", model]
         shape = f"opencode run --pure --format json --no-thinking -m {model} <prompt>"
+    if agent:
+        cmd.extend(["--agent", str(agent)])
+        shape = shape.replace(" <prompt>", f" --agent {agent} <prompt>")
     if variant:
         cmd.extend(["--variant", str(variant)])
         shape = shape.replace(" <prompt>", f" --variant {variant} <prompt>")
@@ -2900,6 +2904,16 @@ def claude_command(
     if bool_candidate(candidate, "no_session_persistence", False) and not provider_session_id:
         cmd.append("--no-session-persistence")
         shape_parts.append("--no-session-persistence")
+    add_dirs = candidate.get("add_dirs") or []
+    if isinstance(add_dirs, (str, Path)):
+        add_dirs = [add_dirs]
+    for add_dir in add_dirs:
+        cmd.extend(["--add-dir", str(add_dir)])
+        shape_parts.extend(["--add-dir", json.dumps(str(add_dir))])
+    allowed_tools = candidate.get("allowed_tools")
+    if allowed_tools:
+        cmd.extend(["--allowedTools", str(allowed_tools)])
+        shape_parts.extend(["--allowedTools", json.dumps(str(allowed_tools))])
     max_budget = candidate.get("max_budget_usd")
     if max_budget is not None:
         cmd.extend(["--max-budget-usd", str(max_budget)])

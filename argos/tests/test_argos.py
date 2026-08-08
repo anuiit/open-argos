@@ -3182,3 +3182,113 @@ class InternalBenchmarkTests(IsolatedRuntimeRootsTestCase):
             argos.BENCHMARK_PROBLEMS[0]["control_answer"] = old_control
         self.assertNotEqual(prompt_hash, original)
         self.assertNotEqual(control_hash, original)
+
+
+class ProviderCommandAgenticReadTests(IsolatedRuntimeRootsTestCase):
+    """Command builders must expose the minimal read-only agentic surface.
+
+    opencode candidates may name an agent (its permission block decides
+    what read/grep may touch), and claude candidates may grant explicit
+    --add-dir roots plus a tools whitelist. Both default to the existing
+    tool-less shape so nothing changes for candidates that do not opt in.
+    """
+
+    def test_opencode_command_defaults_have_no_agent_flag(self) -> None:
+        cmd, shape = argos.build_opencode_command(
+            {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go"},
+            "opencode-go/glm-5.2",
+        )
+        self.assertNotIn("--agent", cmd)
+        self.assertNotIn("--agent", shape)
+
+    def test_opencode_command_supports_agent_flag(self) -> None:
+        cmd, shape = argos.build_opencode_command(
+            {
+                "kind": "opencode",
+                "model": "opencode-go/glm-5.2",
+                "provider": "opencode_go",
+                "agent": "argos-reader",
+            },
+            "opencode-go/glm-5.2",
+        )
+        self.assertIn("--agent", cmd)
+        self.assertEqual(cmd[cmd.index("--agent") + 1], "argos-reader")
+        self.assertIn("--agent argos-reader", shape)
+
+    def test_opencode_command_keeps_agent_with_variant_and_session(self) -> None:
+        cmd, shape = argos.build_opencode_command(
+            {"kind": "opencode", "model": "m", "provider": "opencode_go", "agent": "argos-reader", "variant": "high"},
+            "m",
+            provider_session_id="sess_x",
+        )
+        self.assertEqual(
+            cmd,
+            [
+                "opencode", "run", "--pure", "--format", "json", "--no-thinking",
+                "--session", "sess_x", "--agent", "argos-reader", "--variant", "high",
+            ],
+        )
+        self.assertIn("--session sess_x", shape)
+        self.assertIn("--agent argos-reader", shape)
+
+    def test_claude_command_defaults_have_no_add_dir(self) -> None:
+        cmd, shape = argos.claude_command(
+            {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude"}
+        )
+        self.assertNotIn("--add-dir", cmd)
+        self.assertNotIn("--add-dir", shape)
+
+    def test_claude_command_supports_add_dirs_string_or_list(self) -> None:
+        single_cmd, single_shape = argos.claude_command(
+            {
+                "kind": "claude",
+                "model": "claude-sonnet-5",
+                "provider": "claude",
+                "add_dirs": r"F:\dev\ab-lab",
+            }
+        )
+        self.assertEqual(single_cmd.count("--add-dir"), 1)
+        self.assertEqual(
+            single_cmd[single_cmd.index("--add-dir") + 1], r"F:\dev\ab-lab"
+        )
+
+        multi_cmd, multi_shape = argos.claude_command(
+            {
+                "kind": "claude",
+                "model": "claude-sonnet-5",
+                "provider": "claude",
+                "add_dirs": [r"F:\dev\ab-lab", r"F:\dev\ab-lab\case-b-sidecar"],
+            }
+        )
+        self.assertEqual(multi_cmd.count("--add-dir"), 2)
+        self.assertEqual(multi_shape.count("--add-dir"), 2)
+
+    def test_claude_command_tools_whitelist_passes_through(self) -> None:
+        cmd, shape = argos.claude_command(
+            {
+                "kind": "claude",
+                "model": "claude-sonnet-5",
+                "provider": "claude",
+                "tools": "Read,Glob,Grep",
+            }
+        )
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "Read,Glob,Grep")
+        self.assertIn("--tools", shape)
+
+    def test_claude_command_allowed_tools_grants_read_only_approvals(self) -> None:
+        cmd, shape = argos.claude_command(
+            {
+                "kind": "claude",
+                "model": "claude-sonnet-5",
+                "provider": "claude",
+                "tools": "Read,Glob,Grep",
+                "allowed_tools": "Read,Glob,Grep",
+            }
+        )
+        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "Read,Glob,Grep")
+        self.assertIn("--allowedTools", shape)
+        cmd_default, _ = argos.claude_command(
+            {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude"}
+        )
+        self.assertNotIn("--allowedTools", cmd_default)
+
