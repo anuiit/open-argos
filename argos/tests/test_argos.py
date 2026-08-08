@@ -3292,3 +3292,61 @@ class ProviderCommandAgenticReadTests(IsolatedRuntimeRootsTestCase):
         )
         self.assertNotIn("--allowedTools", cmd_default)
 
+    def test_candidate_tool_surface_opencode_agent(self) -> None:
+        surface = argos.candidate_tool_surface(
+            {"kind": "opencode", "model": "opencode-go/glm-5.2", "agent": "argos-reader"}
+        )
+        self.assertIn("argos-reader", surface)
+
+    def test_candidate_tool_surface_claude_add_dirs(self) -> None:
+        surface = argos.candidate_tool_surface(
+            {"kind": "claude", "model": "claude-sonnet-5", "add_dirs": [r"F:\lab"]}
+        )
+        self.assertIn("lecture", surface)
+        surface_named = argos.candidate_tool_surface(
+            {
+                "kind": "claude",
+                "model": "claude-sonnet-5",
+                "add_dirs": [r"F:\lab"],
+                "allowed_tools": "Read,Glob,Grep",
+            }
+        )
+        self.assertIn("Read,Glob,Grep", surface_named)
+
+    def test_candidate_tool_surface_advisory_candidate_is_none(self) -> None:
+        self.assertIsNone(
+            argos.candidate_tool_surface(
+                {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude"}
+            )
+        )
+        self.assertIsNone(
+            argos.candidate_tool_surface(
+                {"kind": "opencode", "model": "opencode-go/glm-5.2"}
+            )
+        )
+
+    def test_tool_grant_addendum_appended_for_agentic_candidate(self) -> None:
+        prompt = "Analyse ce fichier."
+        out = argos.apply_tool_grant_addendum(
+            prompt,
+            {"kind": "opencode", "model": "m", "agent": "argos-reader"},
+        )
+        self.assertTrue(out.startswith(prompt))
+        self.assertIn("Dérogation au contrat argos", out)
+        self.assertIn("argos-reader", out)
+
+    def test_tool_grant_addendum_idempotent(self) -> None:
+        prompt = "Analyse ce fichier."
+        cand = {"kind": "opencode", "model": "m", "agent": "argos-reader"}
+        once = argos.apply_tool_grant_addendum(prompt, cand)
+        twice = argos.apply_tool_grant_addendum(once, cand)
+        self.assertEqual(once, twice)
+
+    def test_tool_grant_addendum_not_applied_to_advisory_candidate(self) -> None:
+        prompt = "Analyse ce fichier."
+        out = argos.apply_tool_grant_addendum(
+            prompt,
+            {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude"},
+        )
+        self.assertEqual(out, prompt)
+
