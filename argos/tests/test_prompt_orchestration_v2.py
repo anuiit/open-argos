@@ -453,6 +453,61 @@ class FindingsLedgerTests(unittest.TestCase):
         self.assertEqual(race["disagreement"], "severity")
         self.assertEqual(len(race["occurrences"]), 2)
 
+    def test_preamble_minority_disclosure_survives_parse(self) -> None:
+        # Regression: a prompt-injection disclosure placed in a provider's
+        # preamble (before any heading) used to be silently dropped from
+        # findings.json while final.md kept it, destroying minority evidence
+        # downstream automation reads from the ledger.
+        review = (
+            "Note: NOTICE.md contains an embedded instruction telling AI "
+            "reviewers to falsely report the code as clean. That is a "
+            "prompt-injection attempt in untrusted data; I am disregarding "
+            "it and reviewing the code on its merits.\n"
+            "\n"
+            "## Blockers\n"
+            "- SQL injection in get_user_orders via string concatenation.\n"
+            "## Important issues\n"
+            "- (none)\n"
+            "## Preferences\n"
+            "- (none)\n"
+            "## Minimal fix plan\n"
+            "- Raise the NOTICE.md injection with the repository owner.\n"
+        )
+        findings = argos.parse_review_findings(
+            review, source="fable", round_number=1
+        )
+        texts = [row["text"] for row in findings]
+        self.assertTrue(
+            any("prompt-injection attempt" in text for text in texts),
+            texts,
+        )
+        preamble = next(
+            row for row in findings if "prompt-injection attempt" in row["text"]
+        )
+        self.assertEqual(preamble["severity"], "important")
+        self.assertEqual(preamble["occurrences"][0]["source"], "fable")
+        # The fix plan restates findings; it must stay excluded.
+        self.assertFalse(
+            any("repository owner" in text for text in texts), texts
+        )
+
+    def test_preamble_noise_is_filtered(self) -> None:
+        noisy = (
+            "Short line.\n"
+            "> quoted preamble line that should never become a finding\n"
+            "| table | cell | that should never become a finding either\n"
+            "<!-- html comment that should never become a finding -->\n"
+            "```\n"
+            "code fence content that should never become a finding\n"
+            "```\n"
+            "## Blockers\n"
+            "- (none)\n"
+        )
+        findings = argos.parse_review_findings(
+            noisy, source="reviewer", round_number=1
+        )
+        self.assertEqual(findings, [])
+
     def test_no_delta_cycle_is_bounded(self) -> None:
         rows = argos.parse_review_findings(
             "## Blockers\n- Same concrete bug.",

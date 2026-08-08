@@ -3870,6 +3870,7 @@ REVIEW_FINDING_SEVERITIES = {
     "preferences": "preference",
 }
 REVIEW_SEVERITY_RANK = {"blocker": 0, "important": 1, "preference": 2}
+PREAMBLE_FINDING_MIN_CHARS = 40
 
 
 def normalize_finding_text(text: str) -> str:
@@ -3884,40 +3885,74 @@ def parse_review_findings(
     source: str,
     round_number: int,
 ) -> list[dict[str, Any]]:
+    """Extract findings from one review/critique output.
+
+    Bullets under the contract headings (Blockers / Important issues /
+    Preferences) become findings with that severity. Content placed before
+    the first heading is also captured as ``important`` findings: providers
+    use preambles for meta-issues such as prompt-injection disclosures, and
+    dropping them would silently destroy minority evidence that downstream
+    automation reads from ``findings.json``. To limit boilerplate noise,
+    only preamble bullets and paragraphs of at least
+    ``PREAMBLE_FINDING_MIN_CHARS`` characters are kept; code fences,
+    tables, blockquotes, and headings inside the preamble are skipped.
+    Bullets under non-severity headings (for example ``## Minimal fix
+    plan``) stay excluded: the fix plan restates the findings above it.
+    """
     current_severity: str | None = None
+    in_preamble = True
+    in_fence = False
     findings: list[dict[str, Any]] = []
+
+    def add(text: str, severity: str) -> None:
+        empty_key = normalize_finding_text(text)
+        if not empty_key or empty_key in {"none", "aucun", "aucune", "n a"}:
+            return
+        fingerprint = stable_hash({"finding": empty_key})
+        findings.append(
+            {
+                "fingerprint": fingerprint,
+                "text": text,
+                "severity": severity,
+                "status": "open",
+                "disagreement": None,
+                "occurrences": [
+                    {
+                        "source": source,
+                        "round": int(round_number),
+                        "severity": severity,
+                        "status": "open",
+                        "text": text,
+                    }
+                ],
+            }
+        )
+
     for raw_line in content.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         heading = re.match(r"^\s{0,3}#{2,6}\s+(.+?)\s*$", raw_line)
         if heading:
             current_severity = REVIEW_FINDING_SEVERITIES.get(
                 heading.group(1).strip().casefold()
             )
+            in_preamble = False
             continue
         bullet = re.match(r"^\s*[-*+]\s+(.+?)\s*$", raw_line)
-        if not bullet or current_severity is None:
+        if bullet:
+            if current_severity is not None:
+                add(bullet.group(1).strip(), current_severity)
+            elif in_preamble:
+                add(bullet.group(1).strip(), "important")
             continue
-        text = bullet.group(1).strip()
-        empty_key = normalize_finding_text(text)
-        if not empty_key or empty_key in {"none", "aucun", "aucune", "n a"}:
-            continue
-        fingerprint = stable_hash({"finding": empty_key})
-        occurrence = {
-            "source": source,
-            "round": int(round_number),
-            "severity": current_severity,
-            "status": "open",
-            "text": text,
-        }
-        findings.append(
-            {
-                "fingerprint": fingerprint,
-                "text": text,
-                "severity": current_severity,
-                "status": "open",
-                "disagreement": None,
-                "occurrences": [occurrence],
-            }
-        )
+        if in_preamble and len(stripped) >= PREAMBLE_FINDING_MIN_CHARS:
+            if stripped.startswith((">", "|", "#", "<!--")):
+                continue
+            add(stripped, "important")
     return sorted(findings, key=lambda row: row["fingerprint"])
 
 
