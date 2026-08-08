@@ -20,6 +20,11 @@ For every case:
 Until this protocol has been run, the examples below are capabilities to
 demonstrate, not performance claims.
 
+> **Read-only agentic surface:** providers can be outfitted with read/grep/glob
+> tools to verify findings outside the snapshot. See
+> `docs/AGENTIC_READING.md` for the transport configuration and security
+> posture.
+
 ## 1. Multi-file security review
 
 Use the frozen `review-multifile-security` fixture or an equivalent real pull

@@ -3350,3 +3350,80 @@ class ProviderCommandAgenticReadTests(IsolatedRuntimeRootsTestCase):
         )
         self.assertEqual(out, prompt)
 
+    def test_validate_agentic_keys_opencode_agent_ok(self) -> None:
+        argos.validate_agentic_keys(
+            "glmx",
+            {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go", "agent": "argos-reader"},
+        )
+
+    def test_validate_agentic_keys_claude_add_dirs_ok(self) -> None:
+        argos.validate_agentic_keys(
+            "sonnetx",
+            {
+                "kind": "claude", "model": "claude-sonnet-5", "provider": "claude",
+                "add_dirs": [r"F:\lab"], "allowed_tools": "Read,Glob,Grep",
+            },
+        )
+
+    def test_validate_agentic_keys_agent_rejected_on_claude(self) -> None:
+        with self.assertRaises(SystemExit):
+            argos.validate_agentic_keys(
+                "sonnetx",
+                {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude", "agent": "argos-reader"},
+            )
+
+    def test_validate_agentic_keys_add_dirs_rejected_on_opencode(self) -> None:
+        with self.assertRaises(SystemExit):
+            argos.validate_agentic_keys(
+                "glmx",
+                {"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go", "add_dirs": [r"F:\lab"]},
+            )
+
+    def test_validate_agentic_keys_bad_add_dirs_type(self) -> None:
+        with self.assertRaises(SystemExit):
+            argos.validate_agentic_keys(
+                "sonnetx",
+                {"kind": "claude", "model": "claude-sonnet-5", "provider": "claude", "add_dirs": 42},
+            )
+
+    def test_validate_config_rejects_agentic_key_on_wrong_kind(self) -> None:
+        cfg = {
+            "models": {
+                "glmx": [{"kind": "opencode", "model": "opencode-go/glm-5.2", "provider": "opencode_go", "allowed_tools": "Read"}],
+            }
+        }
+        with self.assertRaises(SystemExit):
+            argos.validate_config(cfg)
+
+    def test_validate_config_accepts_agentic_keys_on_correct_kind(self) -> None:
+        cfg = {
+            "models": {
+                "sonnetx": [{"kind": "claude", "model": "claude-sonnet-5", "provider": "claude", "add_dirs": [r"F:\lab"], "allowed_tools": "Read,Glob,Grep"}],
+            }
+        }
+        argos.validate_config(cfg)
+
+    def test_config_set_model_writes_agentic_keys(self) -> None:
+        import tempfile
+        import io
+        import contextlib
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "config.json"
+            path.write_text(json.dumps({"version": 1, "models": {}}), encoding="utf-8")
+            args = type("Args", (), {
+                "config": str(path), "argos": "sonnetx", "kind": "claude",
+                "model": "claude-sonnet-5", "provider": None, "effort": None,
+                "timeout_key": None, "provider_lock": None, "command": None,
+                "permission_mode": None, "tools": None, "max_budget_usd": None,
+                "safe_mode": False, "disable_tools": False, "disable_slash_commands": False,
+                "no_session_persistence": False, "variant": None,
+                "agent": None, "add_dirs": [r"F:\dev\ab-lab"], "allowed_tools": "Read,Glob,Grep",
+            })()
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                argos.config_set_model(args)
+            loaded = argos.load_config(Path(td) / "config.json")
+            cand = loaded["models"]["sonnetx"][0]
+            self.assertEqual(cand["add_dirs"], [r"F:\dev\ab-lab"])
+            self.assertEqual(cand["allowed_tools"], "Read,Glob,Grep")
+

@@ -642,6 +642,42 @@ def apply_tool_grant_addendum(prompt: str, candidate: dict[str, Any]) -> str:
     return prompt + "\n\n" + ARGOS_TOOL_GRANT_ADDENDUM.format(surface=surface)
 
 
+def validate_agentic_keys(argos_name: str, candidate: dict[str, Any]) -> None:
+    """Validate the read-only agentic surface keys on a candidate.
+
+    These keys are transport-specific: opencode takes an `agent`, claude
+    takes `add_dirs`/`allowed_tools`. A key on the wrong kind is silent
+    misconfiguration (it would be ignored by the builder), so reject it
+    loudly instead.
+    """
+    kind = candidate.get("kind")
+    agent = candidate.get("agent")
+    add_dirs = candidate.get("add_dirs")
+    allowed_tools = candidate.get("allowed_tools")
+    if agent and kind != "opencode":
+        raise SystemExit(
+            f"Argos {argos_name}: `agent` ({agent!r}) is only valid for kind=opencode "
+            f"(read-only agentic surface); got kind={kind!r}"
+        )
+    if (add_dirs or allowed_tools) and kind != "claude":
+        raise SystemExit(
+            f"Argos {argos_name}: `add_dirs`/`allowed_tools` are only valid for "
+            f"kind=claude (read-only agentic surface); got kind={kind!r}"
+        )
+    if add_dirs is not None:
+        if isinstance(add_dirs, str):
+            add_dirs_list = [add_dirs]
+        elif isinstance(add_dirs, (list, tuple)):
+            add_dirs_list = list(add_dirs)
+        else:
+            raise SystemExit(f"Argos {argos_name}: `add_dirs` must be a string or list of strings")
+        for entry in add_dirs_list:
+            if not isinstance(entry, str) or not entry.strip():
+                raise SystemExit(f"Argos {argos_name}: `add_dirs` entries must be non-empty strings")
+    if allowed_tools is not None and (not isinstance(allowed_tools, str) or not allowed_tools.strip()):
+        raise SystemExit(f"Argos {argos_name}: `allowed_tools` must be a non-empty string")
+
+
 ARGOS_OUTPUT_CONTRACT = """Format de sortie obligatoire:
 ## Blockers
 - Défauts bloquant une utilisation sûre du résultat: correction, sécurité, contrat/API, perte de données, confidentialité, identifiants/auth ou exécution d'outils. Liste chaque blocker concret, sinon `(none)`.
@@ -986,6 +1022,7 @@ def validate_config(cfg: dict[str, Any]) -> None:
                 raise SystemExit(minimax_error)
             if kind == "codex" or "codex" in model.lower():
                 raise SystemExit("argos config must not launch Codex models/agents as subprocesses")
+            validate_agentic_keys(logical, c)
     for mode, argoses in cfg.get("modes", {}).items():
         if mode not in PROMPTS:
             raise SystemExit(f"Unknown configured mode: {mode}")
@@ -7370,6 +7407,16 @@ def config_set_model(args: argparse.Namespace) -> int:
         value = getattr(args, key, False)
         if value:
             candidate[key] = True
+    agent = getattr(args, "agent", None)
+    add_dirs = getattr(args, "add_dirs", None)
+    allowed_tools = getattr(args, "allowed_tools", None)
+    if agent:
+        candidate["agent"] = agent
+    if add_dirs:
+        candidate["add_dirs"] = list(add_dirs)
+    if allowed_tools:
+        candidate["allowed_tools"] = allowed_tools
+    validate_agentic_keys(args.argos, candidate)
     cfg.setdefault("models", {})[args.argos] = [candidate]
     backup = save_user_config_with_backup(path, cfg)
     print(json.dumps({"updated": args.argos, "candidate": candidate, "config": str(path), "backup": str(backup) if backup else None}, ensure_ascii=False, indent=2))
@@ -8546,6 +8593,9 @@ def main(argv: list[str] | None = None) -> int:
     p_config_set_model.add_argument("--disable-tools", action="store_true")
     p_config_set_model.add_argument("--disable-slash-commands", action="store_true")
     p_config_set_model.add_argument("--no-session-persistence", action="store_true")
+    p_config_set_model.add_argument("--agent", help="opencode agent name for read-only agentic surface (e.g. argos-reader)")
+    p_config_set_model.add_argument("--add-dir", dest="add_dirs", action="append", help="extra directory a claude candidate may read; repeatable")
+    p_config_set_model.add_argument("--allowed-tools", dest="allowed_tools", help="read-only tool allowlist for claude (e.g. Read,Glob,Grep)")
     p_config_set_mode = config_sub.add_parser("set-mode")
     p_config_set_mode.add_argument("mode", choices=sorted(PROMPTS))
     p_config_set_mode.add_argument("--argos", action="append", required=True)
