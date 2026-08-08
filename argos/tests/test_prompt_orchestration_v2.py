@@ -508,6 +508,21 @@ class FindingsLedgerTests(unittest.TestCase):
         )
         self.assertEqual(findings, [])
 
+    def test_non_conforming_output_contributes_no_findings(self) -> None:
+        # Transport floor: an output with no contract severity heading is
+        # not a review. Its preamble prose must not leak into the ledger
+        # as phantom findings (observed live: a provider that only said
+        # "I'll examine the file directly..." was counted as a finding).
+        garbage = (
+            "I'll examine the file directly to get accurate line "
+            "citations for my review before saying anything concrete "
+            "about the fence arithmetic or the queue semantics.\n"
+        )
+        self.assertEqual(
+            argos.parse_review_findings(garbage, source="glm", round_number=1),
+            [],
+        )
+
     def test_no_delta_cycle_is_bounded(self) -> None:
         rows = argos.parse_review_findings(
             "## Blockers\n- Same concrete bug.",

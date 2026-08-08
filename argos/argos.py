@@ -3896,20 +3896,28 @@ def parse_review_findings(
     only preamble bullets and paragraphs of at least
     ``PREAMBLE_FINDING_MIN_CHARS`` characters are kept; code fences,
     tables, blockquotes, and headings inside the preamble are skipped.
-    Bullets under non-severity headings (for example ``## Minimal fix
-    plan``) stay excluded: the fix plan restates the findings above it.
+    Preamble findings are kept only when the same output also contains at
+    least one contract severity heading: an output with no contract
+    heading at all is non-conforming (the transport floor) and must
+    contribute zero findings instead of injecting preamble prose as
+    phantom findings into the ledger. Bullets under non-severity headings
+    (for example ``## Minimal fix plan``) stay excluded: the fix plan
+    restates the findings above it.
     """
     current_severity: str | None = None
     in_preamble = True
     in_fence = False
+    seen_severity_heading = False
     findings: list[dict[str, Any]] = []
+    preamble_pending: list[dict[str, Any]] = []
 
-    def add(text: str, severity: str) -> None:
+    def add(text: str, severity: str, *, preamble_item: bool = False) -> None:
         empty_key = normalize_finding_text(text)
         if not empty_key or empty_key in {"none", "aucun", "aucune", "n a"}:
             return
         fingerprint = stable_hash({"finding": empty_key})
-        findings.append(
+        target = preamble_pending if preamble_item else findings
+        target.append(
             {
                 "fingerprint": fingerprint,
                 "text": text,
@@ -3940,6 +3948,8 @@ def parse_review_findings(
             current_severity = REVIEW_FINDING_SEVERITIES.get(
                 heading.group(1).strip().casefold()
             )
+            if current_severity is not None:
+                seen_severity_heading = True
             in_preamble = False
             continue
         bullet = re.match(r"^\s*[-*+]\s+(.+?)\s*$", raw_line)
@@ -3947,12 +3957,14 @@ def parse_review_findings(
             if current_severity is not None:
                 add(bullet.group(1).strip(), current_severity)
             elif in_preamble:
-                add(bullet.group(1).strip(), "important")
+                add(bullet.group(1).strip(), "important", preamble_item=True)
             continue
         if in_preamble and len(stripped) >= PREAMBLE_FINDING_MIN_CHARS:
             if stripped.startswith((">", "|", "#", "<!--")):
                 continue
-            add(stripped, "important")
+            add(stripped, "important", preamble_item=True)
+    if seen_severity_heading:
+        findings.extend(preamble_pending)
     return sorted(findings, key=lambda row: row["fingerprint"])
 
 
